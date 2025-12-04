@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doações - Casa Social Reino Para Todos</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <style>
+        body {
+            background: #e8f1ff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Barra azul padrão */
+        .topBar {
+            width: 100%;
+            background: #1d98ff;
+            padding: 25px 0;
+            text-align: center;
+            color: white;
+            font-size: 2rem;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .topBar img {
+            height: 150px;
+        }
+
+        /* Container branco */
+        .container {
+            margin-top: 60px;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.4rem;
+            color: #0066cc;
+            margin-bottom: 15px;
+        }
+
+        .pixKey {
+            font-size: 1.7rem;
+            font-weight: bold;
+            color: #003a5c;
+            margin: 20px 0;
+        }
+
+        .copyBtn {
+            background: #006dff;
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .copyBtn:hover {
+            background: #0053c7;
+        }
+
+        .backBtn {
+            display: inline-block;
+            margin-top: 25px;
+            padding: 12px 20px;
+            background: #333;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            transition: 0.2s;
+        }
+
+        .backBtn:hover {
+            background: #111;
+        }
+
+        /* Balão de notificação */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: #29a6ff;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            opacity: 0;
+            transform: translateY(20px);
+            pointer-events: none;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            z-index: 999999;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Faixa azul com logo -->
+    <div class="topBar">
+        <img src="img/logo.png" alt="Logo">
+        Doações para Casa Social
+    </div>
+
+    <div class="container">
+        <h1>Ajude a Transformar Vidas</h1>
+
+        <p style="font-size: 1.2rem; color:#333;">
+            Contribua com a Casa Social Reino Para Todos.
+            <br>Qualquer valor faz a diferença ❤️
+        </p>
+
+        <p class="pixKey" id="pixKey">CHAVE PIX: 51.343.453/0001-51</p>
+
+        <button class="copyBtn" onclick="copyPix()">📋 Copiar PIX</button>
+
+        <br>
+
+        <a href="index.html" class="backBtn">⬅ Voltar para a Página Inicial</a>
+    </div>
+
+    <!-- Balão de notificação -->
+    <div id="pixToast" class="toast">PIX copiado!</div>
+
+    <script>
+        function copyPix() {
+            const pix = "51.343.453/0001-51";
+            navigator.clipboard.writeText(pix);
+
+            const toast = document.getElementById("pixToast");
+            toast.classList.add("show");
+
+            setTimeout(() => {
+                toast.classList.remove("show");
+            }, 2000);
+        }
+    </script>
+
+</body>
+</html>
