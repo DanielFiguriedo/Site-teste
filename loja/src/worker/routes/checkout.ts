@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createOrder } from "../lib/orders";
 import { badRequest } from "../lib/errors";
 import { verifyTurnstile } from "../lib/turnstile";
+import { publicOrigin } from "../lib/security";
 import type { AppEnv } from "../env";
 
 export const checkout = new Hono<AppEnv>();
@@ -47,7 +48,9 @@ checkout.post("/checkout", async (c) => {
 
   await verifyTurnstile(c.env, input.turnstileToken, c.req.header("cf-connecting-ip"));
 
-  const origin = new URL(c.req.url).origin;
+  // Not `new URL(c.req.url).origin`: that comes from the `Host` header, and
+  // this value becomes the webhook address the gateway will call back.
+  const origin = publicOrigin(c.env, c.req.url);
   const result = await createOrder(c.env, input, origin, c.req.header("cf-connecting-ip") ?? null);
 
   return c.json(result, 201);

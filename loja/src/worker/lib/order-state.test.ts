@@ -31,20 +31,17 @@ describe("order state machine", () => {
     expect(isValidTransition("delivered", "refunded")).toBe(true);
   });
 
-  it("treats refunded and cancelled as terminal", () => {
-    for (const target of ORDER_STATUSES) {
-      expect(isValidTransition("refunded", target)).toBe(false);
-      expect(isValidTransition("cancelled", target)).toBe(false);
-    }
-  });
-
-  it("lets an expired order move to review, and nowhere else", () => {
-    // A Pix can land after the QR expires. Without this exit the payment would
-    // be absorbed silently and not even an admin could fix it.
-    expect(isValidTransition("expired", "needs_review")).toBe(true);
-    for (const target of ORDER_STATUSES) {
-      if (target === "needs_review") continue;
-      expect(isValidTransition("expired", target)).toBe(false);
+  it("lets a closed order move to review, and nowhere else", () => {
+    // A Pix can land on an order that is expired, cancelled or already
+    // refunded: closing our row does not cancel the charge at the gateway, and
+    // the buyer may still have the QR open. Without this one exit the payment
+    // would be absorbed silently and not even an admin could fix it.
+    for (const from of ["expired", "cancelled", "refunded"] as const) {
+      expect(isValidTransition(from, "needs_review")).toBe(true);
+      for (const target of ORDER_STATUSES) {
+        if (target === "needs_review") continue;
+        expect(isValidTransition(from, target)).toBe(false);
+      }
     }
   });
 

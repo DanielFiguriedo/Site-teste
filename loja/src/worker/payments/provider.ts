@@ -54,9 +54,13 @@ export interface PaymentProvider {
   getCharge(chargeId: string): Promise<ChargeState>;
 
   /**
-   * Validates the webhook signature against the RAW request body.
-   * Never pass re-serialised JSON here: the signature covers the original
-   * bytes, and any reserialisation invalidates it.
+   * Validates the webhook signature.
+   *
+   * Always the RAW request body, never re-serialised JSON: a provider whose
+   * signature covers the body would reject it otherwise, and the bytes are the
+   * only thing both sides agree on. Mercado Pago signs a manifest built from
+   * the headers instead, so it ignores this argument — the contract passes the
+   * raw body regardless, because the next provider may not.
    */
   verifyWebhookSignature(rawBody: string, headers: Headers): Promise<boolean>;
 

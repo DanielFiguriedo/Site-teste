@@ -26,9 +26,12 @@ export async function verifyTurnstile(
   if (ip) form.append("remoteip", ip);
 
   const response = await fetch(VERIFY_URL, { method: "POST", body: form });
-  const result = (await response.json()) as { success: boolean };
 
-  if (!result.success) {
+  // Fails closed. An unreadable answer from the verifier is not a pass: the
+  // whole point of this check is that it cannot be skipped by making it fail.
+  const result = (await response.json().catch(() => null)) as { success?: boolean } | null;
+
+  if (!response.ok || !result?.success) {
     throw badRequest("Verificação anti-robô falhou. Recarregue a página e tente de novo.");
   }
 }

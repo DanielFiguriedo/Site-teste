@@ -2,16 +2,14 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { asc, eq } from "drizzle-orm";
 import { db, schema } from "../../db/client";
-import { requireAdmin } from "../../lib/auth";
 import { notFound, badRequest, ApiError } from "../../lib/errors";
 import { slugify } from "../../lib/slug";
+import { IMAGE_KEY_PATTERN } from "../../lib/images";
 import { isUniqueViolation } from "../../lib/sqlite-errors";
 import { toProduct } from "../../lib/serializers";
 import type { AppEnv } from "../../env";
 
 export const adminCatalog = new Hono<AppEnv>();
-
-adminCatalog.use("/admin/*", requireAdmin);
 
 const productSchema = z.object({
   categoryId: z.number().int().positive(),
@@ -22,7 +20,9 @@ const productSchema = z.object({
   priceCents: z.number().int().min(1).max(10_000_000),
   originalPriceCents: z.number().int().min(0).max(10_000_000).nullable().optional(),
   durationDays: z.number().int().min(1).max(3650).nullable().optional(),
-  imageKey: z.string().max(200).nullable().optional(),
+  // Only a key the upload route produced. An arbitrary string here would let a
+  // product point at any other object in the bucket.
+  imageKey: z.string().regex(IMAGE_KEY_PATTERN).nullable().optional(),
   giftable: z.boolean().optional(),
   payWhatYouWant: z.boolean().optional(),
   featured: z.boolean().optional(),
@@ -182,6 +182,36 @@ const SETTING_KEYS = [
   "refund_policy_md",
 ] as const;
 
+/**
+ * Settings whose value ends up in a `src` or an `href`.
+ *
+ * A `javascript:` URL stored here would run the moment the store rendered it,
+ * and React does not escape a URL scheme. Only an absolute https address or a
+ * path inside the store is accepted.
+ *
+ * The check resolves the value instead of reading its first characters:
+ * `//evil.com` and `/\evil.com` are both paths to a prefix test and both
+ * another origin to a browser, which reads a backslash as a slash.
+ */
+const URL_SETTINGS = new Set<string>(["logo_url", "discord_invite"]);
+
+/** Any origin, as long as it is not one a stored value could reach. */
+const RESOLVE_AGAINST = "https://store.invalid";
+
+function isSafeUrl(value: string): boolean {
+  if (value === "") return true;
+  try {
+    const resolved = new URL(value, RESOLVE_AGAINST);
+    // Still inside the store: a genuine path.
+    if (resolved.origin === RESOLVE_AGAINST) return true;
+    // Leaves the store, so it has to say so: `//evil.test` and `/\evil.test`
+    // reach another origin while reading as a local path.
+    return value.toLowerCase().startsWith("https://");
+  } catch {
+    return false;
+  }
+}
+
 adminCatalog.get("/admin/settings", async (c) => {
   const rows = await db(c.env).select().from(schema.settings);
   return c.json(Object.fromEntries(rows.map((row) => [row.key, row.value])));
@@ -196,12 +226,20 @@ adminCatalog.put("/admin/settings", async (c) => {
     // Closed list: without it any key at all would land in the settings table.
     if (!SETTING_KEYS.includes(key as (typeof SETTING_KEYS)[number])) continue;
 
+    // An address is stored exactly as it was validated: checking the trimmed
+    // value and storing the untrimmed one would defeat the check.
+    const stored = (URL_SETTINGS.has(key) ? String(value).trim() : String(value)).slice(0, 4000);
+
+    if (URL_SETTINGS.has(key) && !isSafeUrl(stored)) {
+      throw badRequest(`O endereço em "${key}" precisa começar com https:// ou com /.`);
+    }
+
     await database
       .insert(schema.settings)
-      .values({ key, value: String(value).slice(0, 4000) })
+      .values({ key, value: stored })
       .onConflictDoUpdate({
         target: schema.settings.key,
-        set: { value: String(value).slice(0, 4000), updatedAt: Math.floor(Date.now() / 1000) },
+        set: { value: stored, updatedAt: Math.floor(Date.now() / 1000) },
       });
   }
 

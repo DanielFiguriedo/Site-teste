@@ -25,7 +25,7 @@ Portuguese: they are data, not code.
 
 ```bash
 npm run dev              # Vite + workerd (the real Worker runtime)
-npm test                 # 155 tests, unit + integration, inside workerd
+npm test                 # 204 tests, unit + integration + attacks, in workerd
 npm run typecheck
 npm run build
 
@@ -54,8 +54,20 @@ store, and there is a test that pins it.
 purchase time. Changing a product's price must not rewrite past sales.
 
 **Every admin route is guarded server-side.** Hiding a screen in the front-end
-protects nothing. `src/worker/routes/admin/admin.test.ts` keeps a list of every
-protected route — add to it whenever you add a route.
+protects nothing. One `app.use("/api/admin/*")` in `index.ts` guards the whole
+panel, with login and logout as the two named exceptions — never a per-router
+guard, which depends on mount order and on the next router remembering.
+`src/worker/routes/admin/admin.test.ts` keeps a list of every protected route —
+add to it whenever you add a route.
+
+**Every state-changing request checks its `Origin`.** `requireSameOrigin` runs
+on all of `/api/*` except the webhook, which the gateway calls with no origin
+and authenticates by HMAC instead. `SameSite=Strict` alone does not cover a
+sibling subdomain.
+
+**Nothing coming out of R2 keeps the content type it was stored with.** The
+image route decides the type from the key, and the upload decides the format
+from the file's own magic bytes. See `.claude/skills/security/`.
 
 ## Architecture
 
@@ -90,6 +102,17 @@ everything else goes through the actual HTTP routes.
 State is wiped between tests in `src/test/setup.ts` — storage is isolated per
 file, not per test, so without that a suite would pass alone and fail together.
 
+## Documentation for the owner
+
+`docs/` holds the Portuguese documentation the server owner reads, illustrated
+with a screenshot of every screen: a tour of the system, a deployment
+walkthrough (Cloudflare plus the Mercado Pago integration) written for someone
+who does not program, the security explanation, the code structure and the
+day-to-day routine.
+
+A change that alters a screen, a deploy step or a security guarantee has to be
+reflected there — including a fresh screenshot when the screen itself changed.
+
 ## Project skills and agents
 
 - `.claude/skills/design-system/` — tokens, components and visual rules.
@@ -99,5 +122,10 @@ file, not per test, so without that a suite would pass alone and fail together.
 - `.claude/skills/cloudflare-worker/` — bindings, migrations, secrets, deploy.
 - `.claude/skills/testing/` — how the test suite is organised and what a new
   feature is expected to cover.
+- `.claude/skills/security/` — threat model, hardening rules and how to write
+  an attack test. **Read before touching auth, admin routes, uploads, the
+  webhook or headers.**
 - Agent `ui-reviewer` — reviews screens against the design system and a11y.
 - Agent `payment-auditor` — audits changes to the payment flow.
+- Agent `security-auditor` — audits the whole attack surface; run it before a
+  deploy.

@@ -12,6 +12,7 @@ import {
   seedAdmin,
   seedCatalog,
   signIn,
+  uploadImage,
 } from "../../../test/helpers";
 
 /**
@@ -37,6 +38,7 @@ const PROTECTED: [string, string][] = [
   ["GET", "/api/admin/settings"],
   ["PUT", "/api/admin/settings"],
   ["POST", "/api/admin/upload"],
+  ["DELETE", "/api/admin/upload/products/000000000000000000000000.png"],
 ];
 
 describe("admin authentication", () => {
@@ -419,15 +421,11 @@ describe("admin order queue", () => {
 describe("admin image upload", () => {
   it("stores the image in R2 and returns a URL that serves it", async () => {
     const cookie = await signIn();
-    const form = new FormData();
-    // A one-pixel PNG is enough: what matters is the round trip.
-    form.append("file", new File([new Uint8Array([137, 80, 78, 71])], "p.png", { type: "image/png" }));
-
-    const response = await request("/api/admin/upload", { method: "POST", cookie, body: form });
-    const { url } = await json<{ key: string; url: string }>(response);
+    const { response, body } = await uploadImage(cookie);
 
     expect(response.status).toBe(201);
-    expect((await request(url)).status).toBe(200);
+    expect(body.key).toMatch(/^products\/[0-9a-f]{24}\.png$/);
+    expect((await request(body.url)).status).toBe(200);
   });
 
   it("refuses a type that is not on the allow list", async () => {

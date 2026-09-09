@@ -15,6 +15,14 @@ export interface Env {
   PAYMENT_PROVIDER: "mock" | "mercadopago";
   /** Turnstile public key. Empty disables the widget. */
   TURNSTILE_SITE_KEY?: string;
+  /**
+   * The store's public address, e.g. `https://loja.servidor.com.br`.
+   *
+   * Pins the webhook URL handed to the gateway and the origin the CSRF check
+   * compares against, instead of trusting the request's own `Host` header.
+   * Empty falls back to the request, which is what development needs.
+   */
+  PUBLIC_BASE_URL?: string;
 
   // Secrets
   SESSION_SECRET: string;

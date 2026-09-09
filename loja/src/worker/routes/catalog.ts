@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "../db/client";
 import { toCategory, toProduct } from "../lib/serializers";
 import { notFound } from "../lib/errors";
+import { imageContentType } from "../lib/images";
 import type { AppEnv } from "../env";
 import type { StoreSettings } from "@shared/types";
 
@@ -73,15 +74,32 @@ catalog.get("/products/:slug", async (c) => {
   return c.json(toProduct(row.product, row.category));
 });
 
-/** Serves product images stored in R2. */
+/**
+ * Serves product images stored in R2.
+ *
+ * The content type is decided here, from the key, and never read back off the
+ * stored object. Echoing a stored content type is how one bad upload becomes
+ * script running on the store's own origin; `nosniff` and the sandbox CSP
+ * arrive from the global security headers.
+ */
 catalog.get("/images/:key{.+}", async (c) => {
-  const object = await c.env.BUCKET.get(c.req.param("key"));
+  const key = c.req.param("key");
+  const contentType = imageContentType(key);
+
+  // A key that does not match the shape the upload produces is never fetched:
+  // whatever sits under it, this route will not hand it to a browser.
+  if (!contentType) throw notFound("Imagem");
+
+  const object = await c.env.BUCKET.get(key);
   if (!object) throw notFound("Imagem");
 
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-  // The key embeds a content hash, so caching can be aggressive.
-  headers.set("cache-control", "public, max-age=31536000, immutable");
-  return new Response(object.body, { headers });
+  return new Response(object.body, {
+    headers: {
+      "content-type": contentType,
+      "content-disposition": "inline",
+      etag: object.httpEtag,
+      // The key embeds a content hash, so caching can be aggressive.
+      "cache-control": "public, max-age=31536000, immutable",
+    },
+  });
 });

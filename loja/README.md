@@ -15,6 +15,12 @@ served as static assets and the API (Hono) answers `/api/*` from the same deploy
 The code is English; everything a user reads is Portuguese. See `CLAUDE.md` for
 the full convention.
 
+> **Documentation for the store owner lives in [`docs/`](docs/README.md)** — in
+> Portuguese, with a screenshot of every screen: a tour of the whole system, a
+> deployment walkthrough written for someone who does not program (Cloudflare
+> and the Mercado Pago integration), what protects the money, how the code is
+> organised, and the day-to-day routine.
+
 ---
 
 ## Running it locally
@@ -50,7 +56,7 @@ going live.
 ## Tests
 
 ```bash
-npm test           # 155 tests
+npm test           # 204 tests
 npm run test:watch
 npm run typecheck
 ```
@@ -70,6 +76,12 @@ feature is added.
 | Orders | public payload, what must not leak, Pix code lifetime |
 | Admin | every protected route without a session, CRUD, delivery queue, transitions, upload |
 | Cron | expiry only after asking the gateway, lost-webhook recovery, ordering |
+| Security | forged prices, CSRF, session tampering, login lockout, SQL and XSS payloads, upload smuggling, data leaks |
+
+`src/worker/security.test.ts` is the attack suite: every test there tries to
+break the store and asserts both that it was refused **and** that the state it
+was after did not change. The rules it enforces are written down in
+`.claude/skills/security/`.
 
 ---
 
@@ -111,7 +123,13 @@ npx wrangler secret put TURNSTILE_SECRET_KEY        # optional, anti-bot
 ```
 
 For Turnstile, also set the **public** key in `wrangler.jsonc` under
-`vars.TURNSTILE_SITE_KEY`. Leaving it empty disables the widget.
+`vars.TURNSTILE_SITE_KEY`. Leaving it empty disables the widget — which also
+removes the anti-bot check on checkout, so fill it in before going live.
+
+Set `vars.PUBLIC_BASE_URL` to the store's real address in the same file. It
+pins the webhook URL handed to Mercado Pago and the origin the CSRF check
+compares against, instead of trusting the incoming `Host` header. Left empty,
+both fall back to whatever the request claimed to be.
 
 ### 4. Publish
 

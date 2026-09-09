@@ -37,6 +37,7 @@ user-facing strings quote the Portuguese text, because that is the content.
 | `src/worker/routes/orders.test.ts` | public payload and what must not leak |
 | `src/worker/routes/admin/admin.test.ts` | auth, CRUD, delivery queue, upload |
 | `src/worker/scheduled.test.ts` | expiry, lost-webhook recovery, ordering |
+| `src/worker/security.test.ts` | the attack suite: CSRF, session forgery, injection, XSS, uploads, leaks |
 
 ## Helpers
 
@@ -71,6 +72,9 @@ recognising.
   never leaked by accident.
 - **A migration**: it runs automatically in the tests, so a schema change that
   breaks a query fails here rather than on deploy day.
+- **Auth, an admin route, an upload, the webhook or a header**: an attack test
+  in `src/worker/security.test.ts`. `.claude/skills/security/SKILL.md` lists
+  what each new route has to survive.
 
 ## Known friction
 

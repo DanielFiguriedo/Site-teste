@@ -22,9 +22,9 @@ const workerEnv = env as unknown as Env;
  */
 export async function request(
   path: string,
-  init: RequestInit & { cookie?: string } = {},
+  init: RequestInit & { cookie?: string; origin?: string | null; env?: Partial<Env> } = {},
 ): Promise<Response> {
-  const { cookie, ...rest } = init;
+  const { cookie, origin, env: envOverrides, ...rest } = init;
   const headers = new Headers(rest.headers);
   // Only for JSON bodies: forcing a content-type onto FormData would strip
   // the multipart boundary the runtime generates.
@@ -33,8 +33,22 @@ export async function request(
   }
   if (cookie) headers.set("cookie", cookie);
 
+  // Browsers attach `Origin` to every state-changing request, so the default
+  // here is the store's own. `origin: "https://evil.test"` forges one and
+  // `origin: null` sends none, which is how the CSRF tests are written.
+  const unsafeMethod = !["GET", "HEAD", "OPTIONS"].includes((rest.method ?? "GET").toUpperCase());
+  if (origin) headers.set("origin", origin);
+  else if (origin === undefined && unsafeMethod) headers.set("origin", BASE);
+
+  // `env: { ENVIRONMENT: "production" }` exercises the behaviour that only
+  // exists in production — the `__Host-` cookie prefix, above all — which the
+  // test runner would otherwise never reach.
   const ctx = createExecutionContext();
-  const response = await worker.fetch(new Request(`${BASE}${path}`, { ...rest, headers }), workerEnv, ctx);
+  const response = await worker.fetch(
+    new Request(`${BASE}${path}`, { ...rest, headers }),
+    envOverrides ? { ...workerEnv, ...envOverrides } : workerEnv,
+    ctx,
+  );
   await waitOnExecutionContext(ctx);
   return response;
 }
@@ -126,9 +140,14 @@ export interface CheckoutOverrides {
 }
 
 /** Posts a checkout with sensible defaults, returning the raw response. */
-export async function postCheckout(overrides: CheckoutOverrides = {}, ip?: string) {
+export async function postCheckout(
+  overrides: CheckoutOverrides = {},
+  ip?: string,
+  init: { origin?: string | null } = {},
+) {
   return request("/api/checkout", {
     method: "POST",
+    ...init,
     headers: ip ? { "cf-connecting-ip": ip } : undefined,
     body: JSON.stringify({
       productSlug: "vip-ouro-30",
@@ -222,4 +241,33 @@ export async function signIn(email = ADMIN_EMAIL, password = ADMIN_PASSWORD): Pr
   const setCookie = response.headers.get("set-cookie");
   if (!setCookie) throw new Error("Login did not return a session cookie.");
   return setCookie.split(";")[0];
+}
+
+/**
+ * Real first bytes for each accepted image format.
+ *
+ * The upload identifies the format from the file itself, not from the
+ * multipart content-type, so a test that sends four arbitrary bytes labelled
+ * "image/png" is correctly rejected — and would be testing nothing.
+ */
+const MAGIC: Record<string, number[]> = {
+  png: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  jpg: [0xff, 0xd8, 0xff, 0xe0],
+  gif: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61],
+  // RIFF container: "RIFF" <4 length bytes> "WEBP".
+  webp: [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
+};
+
+export function imageBytes(format: keyof typeof MAGIC = "png"): Uint8Array {
+  // Padded so the file is not just its own header.
+  return new Uint8Array([...MAGIC[format], ...new Array(32).fill(0)]);
+}
+
+/** Uploads an image and returns the key the store filed it under. */
+export async function uploadImage(cookie: string, format: keyof typeof MAGIC = "png") {
+  const form = new FormData();
+  form.append("file", new File([imageBytes(format)], `p.${format}`, { type: `image/${format}` }));
+
+  const response = await request("/api/admin/upload", { method: "POST", cookie, body: form });
+  return { response, body: await json<{ key: string; url: string }>(response.clone()) };
 }

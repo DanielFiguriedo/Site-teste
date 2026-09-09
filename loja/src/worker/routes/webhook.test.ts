@@ -208,6 +208,27 @@ describe("payment confirmation", () => {
     expect(row?.adminNote).toContain("depois de o pedido expirar");
   });
 
+  it("flags a payment that lands on a cancelled order", async () => {
+    await seedCatalog();
+    const order = await createOrder();
+    // Cancelling here does not cancel the charge at the gateway: the buyer may
+    // still have the QR open, and paying it puts real money in the account.
+    await env.DB.prepare(`UPDATE orders SET status = 'cancelled' WHERE public_id = ?`)
+      .bind(order.publicId)
+      .run();
+
+    await payOrder(order.publicId);
+
+    const row = await env.DB.prepare(
+      `SELECT status, admin_note AS adminNote FROM orders WHERE public_id = ?`,
+    )
+      .bind(order.publicId)
+      .first<{ status: string; adminNote: string }>();
+
+    expect(row?.status).toBe("needs_review");
+    expect(row?.adminNote).toContain("cancelado");
+  });
+
   it("annotates the order when stock does not cover the sale", async () => {
     await seedCatalog({ priceCents: 1000, stock: 5 });
     const order = await createOrder({ quantity: 2 });

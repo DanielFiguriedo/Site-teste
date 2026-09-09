@@ -9,6 +9,10 @@ PAYMENT_PROVIDER=mock
 # `wrangler secret put SESSION_SECRET` with something random.
 SESSION_SECRET=change-this-value-in-production
 
+# Leave empty locally: the request's own origin is then used, which is what
+# http://localhost:5173 needs.
+# PUBLIC_BASE_URL=
+
 # MERCADOPAGO_ACCESS_TOKEN=
 # MERCADOPAGO_WEBHOOK_SECRET=
 # TURNSTILE_SECRET_KEY=

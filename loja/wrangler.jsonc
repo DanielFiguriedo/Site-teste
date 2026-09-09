@@ -39,7 +39,12 @@
 
     // Turnstile PUBLIC key (the secret one goes through `wrangler secret`).
     // Empty disables the widget and the anti-bot check on checkout.
-    "TURNSTILE_SITE_KEY": ""
+    "TURNSTILE_SITE_KEY": "",
+
+    // The store's own address. Fill this in at deploy time: it pins the webhook
+    // URL sent to the gateway and the origin the CSRF check compares against,
+    // instead of trusting the incoming "Host" header.
+    "PUBLIC_BASE_URL": ""
   }
 
   // Secrets (never here — use `wrangler secret put`):

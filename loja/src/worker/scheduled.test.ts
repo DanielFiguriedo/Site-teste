@@ -170,6 +170,30 @@ describe("scheduled() — reconciliation", () => {
     expect(await orderStatus(urgent.publicId)).toBe("expired");
   });
 
+  it("does not let a backlog of dead orders starve a recent one", async () => {
+    await seedCatalog();
+
+    // A day-old flood: more than one run's budget, all long past their QR.
+    const dead = [];
+    for (let i = 0; i < 25; i++) {
+      const order = await createOrder({ nick: `Flood${i}` });
+      await expireCharge(order.publicId, 48 * 60 * 60);
+      dead.push(order);
+    }
+
+    // The buyer who is actually waiting, overdue by a minute.
+    const waiting = await createOrder({ nick: "Steve_BR" });
+    const chargeId = await chargeIdOf(waiting.publicId);
+    await new MockProvider(env.SESSIONS, env.SESSION_SECRET).simulatePayment(chargeId);
+    await expireCharge(waiting.publicId);
+
+    await runScheduled();
+
+    // Their payment is credited in this run, not after the backlog drains.
+    expect(await orderStatus(waiting.publicId)).toBe("paid");
+    expect(await orderStatus(dead[0].publicId)).toBe("expired");
+  });
+
   it("survives a run with no pending orders at all", async () => {
     await expect(runScheduled()).resolves.toBeUndefined();
   });

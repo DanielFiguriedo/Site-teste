@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, inArray, sql } from "drizzle-orm";
 import { db, schema } from "../../db/client";
-import { requireAdmin } from "../../lib/auth";
 import { changeStatus } from "../../lib/orders";
 import { badRequest } from "../../lib/errors";
 import { toIso } from "../../lib/serializers";
@@ -10,8 +9,6 @@ import { ORDER_STATUSES } from "@shared/types";
 import type { AppEnv } from "../../env";
 
 export const adminOrders = new Hono<AppEnv>();
-
-adminOrders.use("/admin/*", requireAdmin);
 
 /**
  * Order queue.

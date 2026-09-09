@@ -21,6 +21,13 @@ const MAX_QUANTITY = 10;
 const PER_CRON_RUN = 20;
 /** Unpaid orders a single IP may hold open at once. */
 const OPEN_ORDERS_PER_IP = 8;
+/**
+ * How long past its expiry an unpaid order is still worth a gateway call.
+ *
+ * A day after the QR died, nobody is paying it; keeping such orders in the
+ * queue only spends the budget above that a recent buyer needs.
+ */
+const STALE_AFTER_SECONDS = 24 * 60 * 60;
 
 /**
  * Allowed order transitions.
@@ -31,13 +38,31 @@ const OPEN_ORDERS_PER_IP = 8;
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   awaiting_payment: ["paid", "expired", "cancelled", "needs_review"],
   // An order under review was paid in a way that does not match expectations
-  // (wrong amount, unknown amount, paid after expiry). Only a human decides.
+  // (wrong amount, unknown amount, paid after the order was closed). Only a
+  // human decides.
   needs_review: ["paid", "cancelled", "refunded"],
   paid: ["delivered", "refunded", "cancelled"],
   delivered: ["refunded"],
+  // A closed order that receives money is no longer closed: it needs a person.
   expired: ["needs_review"],
-  cancelled: [],
-  refunded: [],
+  cancelled: ["needs_review"],
+  refunded: ["needs_review"],
+};
+
+/**
+ * Closed statuses whose Pix charge can still be paid.
+ *
+ * Closing an order in the panel does not cancel the charge at the gateway, and
+ * the buyer may still have the QR open. Money landing on one of these is not a
+ * duplicate event to swallow — it is a decision for the owner: deliver anyway,
+ * or refund.
+ */
+const CLOSED_BUT_PAYABLE: Partial<Record<OrderStatus, string>> = {
+  expired: "Pagamento confirmado depois de o pedido expirar. Conferir no gateway antes de entregar.",
+  cancelled:
+    "Pagamento confirmado depois de o pedido ser cancelado. Conferir no gateway antes de entregar ou estornar.",
+  refunded:
+    "Pagamento confirmado em um pedido já estornado. Conferir no gateway antes de entregar ou estornar.",
 };
 
 export function isValidTransition(from: OrderStatus, to: OrderStatus): boolean {
@@ -186,8 +211,8 @@ async function flagForReview(env: Env, orderId: number, from: OrderStatus, reaso
  *
  * Idempotent and defensive. Anything other than "the exact order total, on an
  * order still awaiting payment" goes to manual review instead of crediting —
- * including a payment that lands after the order expired, which used to vanish
- * silently.
+ * including a payment that lands on an order already expired, cancelled or
+ * refunded, which would otherwise vanish silently.
  */
 export async function markAsPaid(
   env: Env,
@@ -205,20 +230,18 @@ export async function markAsPaid(
   if (!order) return "unknown";
 
   // Payment confirmed on an order already written off: it cannot be ignored,
-  // because the money really did arrive.
-  if (order.status === "expired") {
-    await flagForReview(
-      env,
-      order.id,
-      "expired",
-      "Pagamento confirmado depois de o pedido expirar. Conferir no gateway antes de entregar.",
-    );
+  // because the money really did arrive. Cancelling or expiring an order here
+  // does not cancel the charge at the gateway, so the QR the buyer is holding
+  // stays payable — and nobody is waiting for that order any more.
+  const closedNote = CLOSED_BUT_PAYABLE[order.status];
+  if (closedNote) {
+    await flagForReview(env, order.id, order.status, closedNote);
     return "needs_review";
   }
 
   if (order.status !== "awaiting_payment") {
-    // Already paid, delivered, cancelled or under review: nothing to do. Not an
-    // error — the gateway resends the same event several times.
+    // Already paid, delivered or under review: nothing to do. Not an error —
+    // the gateway resends the same event several times.
     return "already_processed";
   }
 
@@ -350,6 +373,23 @@ export async function changeStatus(
 export async function reconcileOrders(env: Env) {
   const database = db(env);
   const now = Math.floor(Date.now() / 1000);
+
+  // Long-overdue orders are written off without asking the gateway, in a single
+  // statement. Otherwise a flood of cheap unpaid orders — eight per IP per hour
+  // — outgrows the per-run budget below, and a real buyer whose webhook was
+  // lost waits behind the backlog. Asking the gateway about each of them is the
+  // careful thing to do while the buyer might still pay; a day later it is only
+  // a queue. If money does land on one afterwards, `markAsPaid` sends it to
+  // review rather than swallowing it.
+  await database
+    .update(schema.orders)
+    .set({ status: "expired" })
+    .where(
+      and(
+        eq(schema.orders.status, "awaiting_payment"),
+        lt(schema.orders.expiresAt, now - STALE_AFTER_SECONDS),
+      ),
+    );
 
   const pending = await database
     .select({
