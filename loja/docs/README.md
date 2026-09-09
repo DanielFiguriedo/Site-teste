@@ -12,6 +12,7 @@ Escrito em português, com imagens de cada tela.
 | **[3. Segurança](03-seguranca.md)** | Entender o que protege o seu dinheiro e os dados dos jogadores | Você — e, no anexo, quem for mexer no código |
 | **[4. Estrutura do código](04-estrutura-do-codigo.md)** | Saber como o sistema é organizado por dentro | Curiosos e programadores |
 | **[5. Operação e manutenção](05-operacao-e-manutencao.md)** | A rotina do dia a dia, custos, backup e problemas comuns | Você, depois que a loja estiver no ar |
+| **[6. Rodando no seu computador](06-rodando-localmente.md)** | Ligar a loja na sua máquina, com Pix simulado, sem publicar nada | Quem quiser experimentar antes, ou mexer no sistema |
 
 ## Em uma frase
 
@@ -23,10 +24,13 @@ como entregue.
 ## O caminho mais curto
 
 1. Leia o [guia das telas](01-guia-das-telas.md) para saber o que existe (15 min).
-2. Siga a [implantação](02-implantacao-cloudflare.md) até a compra de teste de
+2. Se quiser ver funcionando antes de publicar,
+   [rode no seu computador](06-rodando-localmente.md) — dá para fazer uma compra
+   inteira com Pix simulado (20 min).
+3. Siga a [implantação](02-implantacao-cloudflare.md) até a compra de teste de
    R$ 0,01 (cerca de 2 horas, a maior parte esperando a aprovação do Mercado
    Pago).
-3. Guarde a [operação e manutenção](05-operacao-e-manutencao.md) para consultar
+4. Guarde a [operação e manutenção](05-operacao-e-manutencao.md) para consultar
    no dia a dia.
 
 ## Documentação técnica
