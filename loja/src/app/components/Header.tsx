@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, NavLink } from "react-router";
 import { useLoja } from "../lib/loja-context";
-import { useJogador, urlAvatar } from "../lib/nick";
+import { useJogador } from "../lib/nick";
+import { AvatarNick } from "./AvatarNick";
 import { useCopiar } from "../lib/copiar";
 import { IconeCheque, IconeCopiar, IconeUsuario } from "./Icones";
 import { ModalNick } from "./ModalNick";
@@ -82,15 +83,15 @@ export function Header() {
               )}
               title={jogador ? "Trocar de nick" : "Informe seu nick"}
             >
-              <span className="grid h-7 w-7 place-items-center overflow-hidden rounded-full bg-surface-inset">
-                {jogador ? (
-                  <img src={urlAvatar(jogador.nick, 28)} alt="" className="h-full w-full" />
-                ) : (
+              {jogador ? (
+                <AvatarNick nick={jogador.nick} tamanho={28} className="rounded-full" />
+              ) : (
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-surface-inset">
                   <span className="h-4 w-4 text-ink-faint">
                     <IconeUsuario />
                   </span>
-                )}
-              </span>
+                </span>
+              )}
               <span className="max-w-[9ch] truncate">{jogador?.nick ?? "Entrar"}</span>
             </button>
           </div>

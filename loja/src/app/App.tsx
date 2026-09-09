@@ -4,6 +4,9 @@ import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { Home } from "./routes/Home";
 import { Loja } from "./routes/Loja";
+import { ProdutoPagina } from "./routes/Produto";
+import { Checkout } from "./routes/Checkout";
+import { PedidoPagina } from "./routes/Pedido";
 
 export function App() {
   return (
@@ -15,6 +18,10 @@ export function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/loja" element={<Loja />} />
+              <Route path="/produto/:slug" element={<ProdutoPagina />} />
+              <Route path="/checkout" element={<Checkout />} />
+              <Route path="/pedido" element={<PedidoPagina />} />
+              <Route path="/pedido/:publicId" element={<PedidoPagina />} />
               <Route path="*" element={<NaoEncontrado />} />
             </Routes>
           </main>

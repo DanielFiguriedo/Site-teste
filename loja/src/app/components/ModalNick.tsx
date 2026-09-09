@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Plataforma } from "@shared/types";
-import { nickValido, urlAvatar, useJogador } from "../lib/nick";
+import { nickValido, useJogador } from "../lib/nick";
+import { AvatarNick } from "./AvatarNick";
 import { Botao } from "./Botao";
 import { cn } from "../lib/cn";
 
@@ -63,7 +64,7 @@ export function ModalNick({ aberto, aoFechar }: { aberto: boolean; aoFechar: () 
         <div className="mt-5 flex items-center gap-3">
           <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-control border border-line bg-surface-inset">
             {valido ? (
-              <img src={urlAvatar(nick.trim(), 56)} alt="" className="h-full w-full" />
+              <AvatarNick nick={nick.trim()} tamanho={54} />
             ) : (
               <span className="text-xs text-ink-faint">?</span>
             )}
