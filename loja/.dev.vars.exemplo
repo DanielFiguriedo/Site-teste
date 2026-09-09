@@ -1,0 +1,14 @@
+# Copie para .dev.vars (que fica fora do Git) e ajuste.
+AMBIENTE=desenvolvimento
+
+# "mock" usa o provedor simulado, com botao de simular pagamento na tela.
+# Trocar para "mercadopago" exige os dois segredos abaixo.
+PAGAMENTO_PROVIDER=mock
+
+# Qualquer texto longo serve em desenvolvimento. Em producao use
+# `wrangler secret put SESSION_SECRET` com algo aleatorio.
+SESSION_SECRET=troque-este-valor-em-producao
+
+# MERCADOPAGO_ACCESS_TOKEN=
+# MERCADOPAGO_WEBHOOK_SECRET=
+# TURNSTILE_SECRET_KEY=

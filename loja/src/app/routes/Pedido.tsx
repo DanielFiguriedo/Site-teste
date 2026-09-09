@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import QRCode from "qrcode";
 import type { Pedido, StatusPedido } from "@shared/types";
 import { formatarBRL } from "@shared/dinheiro";
 import { api } from "../lib/api";
@@ -115,13 +114,30 @@ function PainelPix({ pedido }: { pedido: Pedido }) {
       return;
     }
     if (!pedido.pixCopiaCola) return;
-    QRCode.toDataURL(pedido.pixCopiaCola, {
-      width: 512,
-      margin: 1,
-      color: { dark: "#0b0f14", light: "#ffffff" },
-    })
-      .then(setQr)
-      .catch(() => setQr(null));
+
+    // Carregado sob demanda: a biblioteca de QR pesa mais que o resto da
+    // vitrine junta, e só esta tela precisa dela.
+    const codigo = pedido.pixCopiaCola;
+    let cancelado = false;
+
+    void import("qrcode")
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(codigo, {
+          width: 512,
+          margin: 1,
+          color: { dark: "#0b0f14", light: "#ffffff" },
+        }),
+      )
+      .then((url) => {
+        if (!cancelado) setQr(url);
+      })
+      .catch(() => {
+        if (!cancelado) setQr(null);
+      });
+
+    return () => {
+      cancelado = true;
+    };
   }, [pedido.pixQrBase64, pedido.pixCopiaCola]);
 
   useEffect(() => {
