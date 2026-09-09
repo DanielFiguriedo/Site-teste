@@ -1,114 +1,124 @@
 import {
-  comparaSegura,
+  timingSafeEqual,
   hmacSha256Hex,
-  type CobrancaPix,
-  type DadosCobranca,
-  type EventoWebhook,
+  type ChargeInput,
+  type ChargeState,
+  type ChargeStatus,
   type PaymentProvider,
-  type SituacaoCobranca,
-  type StatusCobranca,
+  type PixCharge,
+  type WebhookEvent,
 } from "./provider";
 
 /**
- * Provedor simulado, usado apenas em desenvolvimento.
+ * Simulated provider, used in development and tests only.
  *
- * Existe por um motivo concreto: o sandbox do Mercado Pago **não permite pagar
- * um Pix de verdade**. Sem este mock, não haveria como exercitar o fluxo
- * completo (cobrança → QR → webhook → fila de entrega) antes de ir ao ar.
+ * It exists for a concrete reason: Mercado Pago's sandbox **cannot actually pay
+ * a Pix charge**. Without this mock there would be no way to exercise the full
+ * flow (charge → QR → webhook → delivery queue) before going live.
  *
- * O estado das cobranças fica no KV; a rota de desenvolvimento
- * `/api/dev/simular-pagamento` marca uma cobrança como paga e dispara o mesmo
- * caminho de webhook que o gateway real usaria.
+ * Charge state lives in KV; the development route `/api/dev/simulate-payment`
+ * marks a charge as paid and fires the same webhook path the real gateway uses.
  */
 export class MockProvider implements PaymentProvider {
-  readonly nome = "mock";
+  readonly name = "mock";
 
   constructor(
     private readonly kv: KVNamespace,
-    private readonly segredo: string,
+    private readonly secret: string,
   ) {}
 
-  private chave(chargeId: string) {
-    return `mock:cobranca:${chargeId}`;
+  private key(chargeId: string) {
+    return `mock:charge:${chargeId}`;
   }
 
-  async criarCobrancaPix(dados: DadosCobranca): Promise<CobrancaPix> {
+  async createPixCharge(input: ChargeInput): Promise<PixCharge> {
     const chargeId = `mock_${crypto.randomUUID()}`;
-    const expiraEm = new Date(Date.now() + dados.minutosValidade * 60_000);
+    const expiresAt = new Date(Date.now() + input.validityMinutes * 60_000);
 
     await this.kv.put(
-      this.chave(chargeId),
+      this.key(chargeId),
       JSON.stringify({
-        status: "pendente" satisfies StatusCobranca,
-        totalCentavos: dados.totalCentavos,
-        referencia: dados.referencia,
+        status: "pending" satisfies ChargeStatus,
+        totalCents: input.totalCents,
+        reference: input.reference,
       }),
-      // Sobrevive à expiração da cobrança para o cron ainda conseguir consultá-la.
-      { expirationTtl: Math.max(60, dados.minutosValidade * 60 * 2) },
+      // Outlives the charge so the cron can still query it after expiry.
+      { expirationTtl: Math.max(60, input.validityMinutes * 60 * 2) },
     );
 
     return {
       chargeId,
-      // Formato inspirado no BR Code só para a tela ficar realista. Não é um
-      // Pix válido — e não deve ser: isto nunca roda em produção.
-      copiaCola:
+      // Shaped like a BR Code purely so the screen looks realistic. It is not a
+      // valid Pix payload — and must not be: this never runs in production.
+      brCode:
         `00020126580014BR.GOV.BCB.PIX0136${chargeId}520400005303986540` +
-        `${(dados.totalCentavos / 100).toFixed(2)}5802BR5913LOJA SIMULADA6009SAO PAULO62070503***6304MOCK`,
+        `${(input.totalCents / 100).toFixed(2)}5802BR5913LOJA SIMULADA6009SAO PAULO62070503***6304MOCK`,
       qrBase64: null,
-      expiraEm,
+      expiresAt,
     };
   }
 
-  async consultarCobranca(chargeId: string): Promise<SituacaoCobranca> {
-    const bruto = await this.kv.get(this.chave(chargeId));
-    if (!bruto) return { status: "expirado", valorPagoCentavos: null };
+  async getCharge(chargeId: string): Promise<ChargeState> {
+    const raw = await this.kv.get(this.key(chargeId));
+    if (!raw) return { status: "expired", paidCents: null };
 
-    const dados = JSON.parse(bruto) as { status: StatusCobranca; totalCentavos: number };
+    const data = JSON.parse(raw) as { status: ChargeStatus; totalCents: number };
     return {
-      status: dados.status,
-      valorPagoCentavos: dados.status === "pago" ? dados.totalCentavos : null,
+      status: data.status,
+      paidCents: data.status === "paid" ? data.totalCents : null,
     };
   }
 
-  /** Marca a cobrança como paga. Só a rota de desenvolvimento chama isto. */
-  async simularPagamento(chargeId: string): Promise<boolean> {
-    const bruto = await this.kv.get(this.chave(chargeId));
-    if (!bruto) return false;
+  /**
+   * Marks the charge as paid. Only the development route calls this.
+   *
+   * `paidCents` overrides the amount, which is how tests reproduce an underpaid
+   * charge without touching the gateway.
+   */
+  async simulatePayment(chargeId: string, paidCents?: number): Promise<boolean> {
+    const raw = await this.kv.get(this.key(chargeId));
+    if (!raw) return false;
 
-    const dados = JSON.parse(bruto) as Record<string, unknown>;
-    await this.kv.put(this.chave(chargeId), JSON.stringify({ ...dados, status: "pago" }), {
-      expirationTtl: 3600,
-    });
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    await this.kv.put(
+      this.key(chargeId),
+      JSON.stringify({
+        ...data,
+        status: "paid",
+        ...(paidCents !== undefined ? { totalCents: paidCents } : {}),
+      }),
+      { expirationTtl: 3600 },
+    );
     return true;
   }
 
-  /** Monta o corpo e o cabeçalho que o webhook simulado vai receber. */
-  async montarWebhook(chargeId: string): Promise<{ corpo: string; assinatura: string }> {
-    const corpo = JSON.stringify({
+  /** Builds the body and header the simulated webhook will carry. */
+  async buildWebhook(chargeId: string): Promise<{ body: string; signature: string }> {
+    const body = JSON.stringify({
       id: `evt_${crypto.randomUUID()}`,
       type: "payment",
       action: "payment.updated",
       data: { id: chargeId },
     });
-    return { corpo, assinatura: await hmacSha256Hex(this.segredo, corpo) };
+    return { body, signature: await hmacSha256Hex(this.secret, body) };
   }
 
-  async verificarAssinaturaWebhook(corpoCru: string, cabecalhos: Headers): Promise<boolean> {
-    const enviada = cabecalhos.get("x-mock-signature");
-    if (!enviada) return false;
-    return comparaSegura(await hmacSha256Hex(this.segredo, corpoCru), enviada);
+  async verifyWebhookSignature(rawBody: string, headers: Headers): Promise<boolean> {
+    const sent = headers.get("x-mock-signature");
+    if (!sent) return false;
+    return timingSafeEqual(await hmacSha256Hex(this.secret, rawBody), sent);
   }
 
-  extrairEvento(corpoCru: string): EventoWebhook | null {
+  parseEvent(rawBody: string): WebhookEvent | null {
     try {
-      const corpo = JSON.parse(corpoCru) as {
+      const body = JSON.parse(rawBody) as {
         id?: string;
         type?: string;
         action?: string;
         data?: { id?: string };
       };
-      if (corpo.type !== "payment" || !corpo.data?.id || !corpo.id) return null;
-      return { eventoId: corpo.id, chargeId: corpo.data.id, tipo: corpo.action ?? "payment" };
+      if (body.type !== "payment" || !body.data?.id || !body.id) return null;
+      return { eventId: body.id, chargeId: body.data.id, type: body.action ?? "payment" };
     } catch {
       return null;
     }

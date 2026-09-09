@@ -1,62 +1,61 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { db, schema } from "../db/client";
-import { naoEncontrado } from "../lib/erros";
-import { paraIso, urlImagem } from "../lib/mapeadores";
+import { notFound } from "../lib/errors";
+import { toIso, imageUrl } from "../lib/serializers";
 import type { AppEnv } from "../env";
-import type { Pedido } from "@shared/types";
+import type { Order } from "@shared/types";
 
-export const pedidosPublicos = new Hono<AppEnv>();
+export const publicOrders = new Hono<AppEnv>();
 
 /**
- * Consulta pública do pedido pelo `public_id`.
+ * Public order lookup by `publicId`.
  *
- * O `public_id` é um token aleatório de 32 caracteres, justamente para que este
- * endereço não seja adivinhável — o id sequencial nunca sai do banco.
+ * `publicId` is a random 32-character token precisely so this address cannot be
+ * guessed — the sequential id never leaves the database.
  */
-pedidosPublicos.get("/pedidos/:publicId", async (c) => {
-  const banco = db(c.env);
+publicOrders.get("/orders/:publicId", async (c) => {
+  const database = db(c.env);
   const publicId = c.req.param("publicId");
 
-  const [pedido] = await banco
+  const [order] = await database
     .select()
-    .from(schema.pedidos)
-    .where(eq(schema.pedidos.publicId, publicId))
+    .from(schema.orders)
+    .where(eq(schema.orders.publicId, publicId))
     .limit(1);
 
-  if (!pedido) throw naoEncontrado("Pedido");
+  if (!order) throw notFound("Pedido");
 
-  const itens = await banco
+  const items = await database
     .select()
-    .from(schema.pedidoItens)
-    .where(eq(schema.pedidoItens.pedidoId, pedido.id));
+    .from(schema.orderItems)
+    .where(eq(schema.orderItems.orderId, order.id));
 
-  const resposta: Pedido = {
-    publicId: pedido.publicId,
-    nick: pedido.nick,
-    plataforma: pedido.plataforma,
-    nickPresenteado: pedido.nickPresenteado,
-    status: pedido.status,
-    totalCentavos: pedido.totalCentavos,
-    itens: itens.map((i) => ({
-      produtoId: i.produtoId,
-      nome: i.nome,
-      precoCentavos: i.precoCentavos,
-      quantidade: i.quantidade,
-      imagemUrl: urlImagem(i.imagemKey),
+  const response: Order = {
+    publicId: order.publicId,
+    nick: order.nick,
+    platform: order.platform,
+    recipientNick: order.recipientNick,
+    status: order.status,
+    totalCents: order.totalCents,
+    items: items.map((item) => ({
+      productId: item.productId,
+      name: item.name,
+      priceCents: item.priceCents,
+      quantity: item.quantity,
+      imageUrl: imageUrl(item.imageKey),
     })),
-    // O QR só é devolvido enquanto a cobrança ainda é pagável; depois disso ele
-    // é lixo na tela e pode induzir um segundo pagamento.
-    pixCopiaCola: pedido.status === "aguardando_pagamento" ? pedido.pixCopiaCola : null,
-    pixQrBase64: pedido.status === "aguardando_pagamento" ? pedido.pixQrBase64 : null,
-    expiraEm: paraIso(pedido.expiraEm),
-    criadoEm: paraIso(pedido.criadoEm)!,
-    pagoEm: paraIso(pedido.pagoEm),
-    entregueEm: paraIso(pedido.entregueEm),
+    // The QR is only returned while the charge is still payable; after that it
+    // is clutter on screen and could invite a second payment.
+    pixBrCode: order.status === "awaiting_payment" ? order.pixBrCode : null,
+    pixQrBase64: order.status === "awaiting_payment" ? order.pixQrBase64 : null,
+    expiresAt: toIso(order.expiresAt),
+    createdAt: toIso(order.createdAt)!,
+    paidAt: toIso(order.paidAt),
+    deliveredAt: toIso(order.deliveredAt),
   };
 
-  // A tela de pagamento consulta este endereço em laço; nada aqui pode ficar
-  // guardado em cache.
+  // The payment screen polls this endpoint; nothing here may be cached.
   c.header("cache-control", "no-store");
-  return c.json(resposta);
+  return c.json(response);
 });

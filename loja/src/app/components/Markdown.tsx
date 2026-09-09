@@ -1,93 +1,96 @@
 import { Fragment, type ReactNode } from "react";
 
 /**
- * Renderizador de markdown mínimo, suficiente para as descrições de produto
- * (título, lista, negrito, código).
+ * Minimal Markdown renderer, enough for product descriptions (heading, list,
+ * bold, inline code).
  *
- * Escrito à mão de propósito: ele produz elementos React, nunca HTML cru. Como
- * o texto vem do painel administrativo e acaba numa página pública, usar
- * `dangerouslySetInnerHTML` com um parser genérico abriria espaço para XSS.
+ * Hand-written on purpose: it produces React elements, never raw HTML. Since
+ * the text is authored in the admin panel and ends up on a public page, using
+ * `dangerouslySetInnerHTML` with a generic parser would open the door to XSS.
  */
 
-function inline(texto: string, chave: string): ReactNode {
-  // Quebra em **negrito** e `código`, preservando o resto como texto puro.
-  const partes = texto.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+function inline(text: string, key: string): ReactNode {
+  // Splits on **bold** and `code`, leaving everything else as plain text.
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
 
-  return partes.map((parte, i) => {
-    const k = `${chave}-${i}`;
-    if (parte.startsWith("**") && parte.endsWith("**") && parte.length > 4) {
+  return parts.map((part, index) => {
+    const partKey = `${key}-${index}`;
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
       return (
-        <strong key={k} className="font-semibold text-ink">
-          {parte.slice(2, -2)}
+        <strong key={partKey} className="font-semibold text-ink">
+          {part.slice(2, -2)}
         </strong>
       );
     }
-    if (parte.startsWith("`") && parte.endsWith("`") && parte.length > 2) {
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
       return (
         <code
-          key={k}
+          key={partKey}
           className="rounded-control bg-surface-inset px-1.5 py-0.5 font-mono text-[0.85em] text-ink"
         >
-          {parte.slice(1, -1)}
+          {part.slice(1, -1)}
         </code>
       );
     }
-    return <Fragment key={k}>{parte}</Fragment>;
+    return <Fragment key={partKey}>{part}</Fragment>;
   });
 }
 
-export function Markdown({ texto, nivel = 2 }: { texto: string; nivel?: 2 | 3 }) {
-  const Titulo = (nivel === 2 ? "h2" : "h3") as "h2" | "h3";
-  const linhas = texto.split("\n");
-  const blocos: ReactNode[] = [];
-  let listaAberta: string[] = [];
+export function Markdown({ text, level = 2 }: { text: string; level?: 2 | 3 }) {
+  const Heading = (level === 2 ? "h2" : "h3") as "h2" | "h3";
+  const lines = text.split("\n");
+  const blocks: ReactNode[] = [];
+  let openList: string[] = [];
 
-  const fecharLista = () => {
-    if (listaAberta.length === 0) return;
-    const itens = listaAberta;
-    listaAberta = [];
-    blocos.push(
-      <ul key={`ul-${blocos.length}`} className="my-3 space-y-2">
-        {itens.map((item, i) => (
-          <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-ink-muted">
-            <span aria-hidden="true" className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-faint" />
-            <span>{inline(item, `li-${blocos.length}-${i}`)}</span>
+  const closeList = () => {
+    if (openList.length === 0) return;
+    const items = openList;
+    openList = [];
+    blocks.push(
+      <ul key={`ul-${blocks.length}`} className="my-3 space-y-2">
+        {items.map((item, index) => (
+          <li key={index} className="flex gap-2.5 text-sm leading-relaxed text-ink-muted">
+            <span
+              aria-hidden="true"
+              className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-faint"
+            />
+            <span>{inline(item, `li-${blocks.length}-${index}`)}</span>
           </li>
         ))}
       </ul>,
     );
   };
 
-  for (const linha of linhas) {
-    const texto = linha.trim();
+  for (const line of lines) {
+    const trimmed = line.trim();
 
-    if (texto.startsWith("- ")) {
-      listaAberta.push(texto.slice(2));
+    if (trimmed.startsWith("- ")) {
+      openList.push(trimmed.slice(2));
       continue;
     }
-    fecharLista();
+    closeList();
 
-    if (texto === "") continue;
+    if (trimmed === "") continue;
 
-    if (texto.startsWith("### ")) {
-      blocos.push(
-        <Titulo
-          key={`h-${blocos.length}`}
+    if (trimmed.startsWith("### ")) {
+      blocks.push(
+        <Heading
+          key={`h-${blocks.length}`}
           className="mt-5 font-display text-base font-bold text-ink first:mt-0"
         >
-          {texto.slice(4)}
-        </Titulo>,
+          {trimmed.slice(4)}
+        </Heading>,
       );
       continue;
     }
 
-    blocos.push(
-      <p key={`p-${blocos.length}`} className="my-2 text-sm leading-relaxed text-ink-muted">
-        {inline(texto, `p-${blocos.length}`)}
+    blocks.push(
+      <p key={`p-${blocks.length}`} className="my-2 text-sm leading-relaxed text-ink-muted">
+        {inline(trimmed, `p-${blocks.length}`)}
       </p>,
     );
   }
-  fecharLista();
+  closeList();
 
-  return <div>{blocos}</div>;
+  return <div>{blocks}</div>;
 }

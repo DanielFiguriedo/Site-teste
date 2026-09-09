@@ -2,49 +2,55 @@ import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { db, schema } from "../db/client";
 import { MockProvider } from "../payments/mock";
-import { naoEncontrado, requisicaoInvalida, ErroApi } from "../lib/erros";
+import { notFound, badRequest, ApiError } from "../lib/errors";
 import type { AppEnv } from "../env";
 
 export const dev = new Hono<AppEnv>();
 
 /**
- * Simula a confirmação de um Pix.
+ * Simulates a Pix confirmation.
  *
- * Existe porque o sandbox do Mercado Pago não permite pagar um Pix de verdade.
- * Em vez de chamar a lógica interna direto, esta rota monta um webhook assinado
- * e o entrega ao endpoint real — assim o que é testado é o caminho de produção
- * inteiro, incluindo assinatura e idempotência.
+ * It exists because Mercado Pago's sandbox cannot actually pay a Pix charge.
+ * Instead of calling the internal logic directly, this route builds a signed
+ * webhook and delivers it to the real endpoint — so what gets exercised is the
+ * entire production path, signature and idempotency included.
+ *
+ * `paidCents` overrides the amount, which is how an underpaid charge is
+ * reproduced without touching the gateway.
  */
-dev.post("/dev/simular-pagamento", async (c) => {
-  if (c.env.AMBIENTE === "producao" || c.env.PAGAMENTO_PROVIDER !== "mock") {
-    // Uma rota que marca pedidos como pagos não pode existir fora do mock.
-    throw new ErroApi(403, "Rota disponível apenas em desenvolvimento com o provedor simulado.");
+dev.post("/dev/simulate-payment", async (c) => {
+  if (c.env.ENVIRONMENT === "production" || c.env.PAYMENT_PROVIDER !== "mock") {
+    // A route that marks orders as paid must not exist outside the mock.
+    throw new ApiError(403, "Rota disponível apenas em desenvolvimento com o provedor simulado.");
   }
 
-  const corpo = (await c.req.json().catch(() => ({}))) as { publicId?: string };
-  if (!corpo.publicId) throw requisicaoInvalida("Informe o publicId do pedido.");
+  const body = (await c.req.json().catch(() => ({}))) as {
+    publicId?: string;
+    paidCents?: number;
+  };
+  if (!body.publicId) throw badRequest("Informe o publicId do pedido.");
 
-  const [pedido] = await db(c.env)
-    .select({ chargeId: schema.pedidos.providerChargeId })
-    .from(schema.pedidos)
-    .where(eq(schema.pedidos.publicId, corpo.publicId))
+  const [order] = await db(c.env)
+    .select({ chargeId: schema.orders.providerChargeId })
+    .from(schema.orders)
+    .where(eq(schema.orders.publicId, body.publicId))
     .limit(1);
 
-  if (!pedido?.chargeId) throw naoEncontrado("Pedido");
+  if (!order?.chargeId) throw notFound("Pedido");
 
   const mock = new MockProvider(c.env.SESSIONS, c.env.SESSION_SECRET);
-  if (!(await mock.simularPagamento(pedido.chargeId))) {
-    throw naoEncontrado("Cobrança simulada (pode ter expirado no KV)");
+  if (!(await mock.simulatePayment(order.chargeId, body.paidCents))) {
+    throw notFound("Cobrança simulada (pode ter expirado no KV)");
   }
 
-  const { corpo: corpoWebhook, assinatura } = await mock.montarWebhook(pedido.chargeId);
-  const origem = new URL(c.req.url).origin;
+  const { body: webhookBody, signature } = await mock.buildWebhook(order.chargeId);
+  const origin = new URL(c.req.url).origin;
 
-  const resposta = await fetch(`${origem}/api/webhook/pix`, {
+  const response = await fetch(`${origin}/api/webhook/pix`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-mock-signature": assinatura },
-    body: corpoWebhook,
+    headers: { "content-type": "application/json", "x-mock-signature": signature },
+    body: webhookBody,
   });
 
-  return c.json({ ok: resposta.ok, statusWebhook: resposta.status });
+  return c.json({ ok: response.ok, webhookStatus: response.status });
 });

@@ -5,43 +5,43 @@ import { cn } from "../lib/cn";
 const BASE =
   "rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors whitespace-nowrap";
 
-const ESTILO = (ativo: boolean) =>
-  ativo
+const style = (active: boolean) =>
+  active
     ? "border-accent bg-accent/12 text-accent"
     : "border-line bg-surface-1 text-ink-muted hover:border-line-strong hover:text-ink";
 
 /**
- * Chip de filtro. O estado ativo é o único caso decorativo em que o acento é
- * permitido — e, justamente por isso, precisa vir sempre daqui, para não haver
- * duas versões do mesmo controle no projeto.
+ * Filter chip. The active state is the one decorative place where the accent is
+ * allowed — and precisely because of that it must always come from here, so the
+ * project never grows two versions of the same control.
  */
 export function ChipLink({
-  para,
-  ativo,
+  to,
+  active,
   children,
 }: {
-  para: string;
-  ativo: boolean;
+  to: string;
+  active: boolean;
   children: ReactNode;
 }) {
   return (
-    <Link to={para} aria-current={ativo ? "page" : undefined} className={cn(BASE, ESTILO(ativo))}>
+    <Link to={to} aria-current={active ? "page" : undefined} className={cn(BASE, style(active))}>
       {children}
     </Link>
   );
 }
 
-export function ChipBotao({
-  ativo,
-  aoClicar,
+export function ChipButton({
+  active,
+  onClick,
   children,
 }: {
-  ativo: boolean;
-  aoClicar: () => void;
+  active: boolean;
+  onClick: () => void;
   children: ReactNode;
 }) {
   return (
-    <button type="button" onClick={aoClicar} aria-pressed={ativo} className={cn(BASE, ESTILO(ativo))}>
+    <button type="button" onClick={onClick} aria-pressed={active} className={cn(BASE, style(active))}>
       {children}
     </button>
   );

@@ -1,61 +1,58 @@
 import { BrowserRouter, Route, Routes } from "react-router";
-import { ProvedorLoja } from "./lib/loja-context";
+import { StoreProvider } from "./lib/store-context";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { Home } from "./routes/Home";
-import { Loja } from "./routes/Loja";
-import { ProdutoPagina } from "./routes/Produto";
+import { Shop } from "./routes/Shop";
+import { ProductPage } from "./routes/Product";
 import { Checkout } from "./routes/Checkout";
-import { PedidoPagina } from "./routes/Pedido";
-import { PaginaLegal } from "./routes/Legal";
+import { OrderPage } from "./routes/Order";
+import { LegalPage } from "./routes/Legal";
 import { AdminApp } from "./admin/AdminApp";
 
 export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* O painel tem cabeçalho e navegação próprios — nada da vitrine. */}
+        {/* The panel has its own header and navigation — nothing from the store. */}
         <Route path="/admin/*" element={<AdminApp />} />
-        <Route path="/*" element={<Vitrine />} />
+        <Route path="/*" element={<Storefront />} />
       </Routes>
     </BrowserRouter>
   );
 }
 
-function Vitrine() {
+function Storefront() {
   return (
-    <ProvedorLoja>
+    <StoreProvider>
       <div className="flex min-h-dvh flex-col">
         <Header />
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route path="/loja" element={<Loja />} />
-            <Route path="/produto/:slug" element={<ProdutoPagina />} />
+            <Route path="/shop" element={<Shop />} />
+            <Route path="/product/:slug" element={<ProductPage />} />
             <Route path="/checkout" element={<Checkout />} />
-            <Route path="/pedido" element={<PedidoPagina />} />
-            <Route path="/pedido/:publicId" element={<PedidoPagina />} />
+            <Route path="/order" element={<OrderPage />} />
+            <Route path="/order/:publicId" element={<OrderPage />} />
+            <Route path="/terms" element={<LegalPage title="Termos de uso" field="termsMd" />} />
             <Route
-              path="/termos"
-              element={<PaginaLegal titulo="Termos de uso" chave="termos_md" />}
+              path="/refund-policy"
+              element={<LegalPage title="Política de reembolso" field="refundPolicyMd" />}
             />
-            <Route
-              path="/reembolso"
-              element={<PaginaLegal titulo="Política de reembolso" chave="reembolso_md" />}
-            />
-            <Route path="*" element={<NaoEncontrado />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
         <Footer />
       </div>
-    </ProvedorLoja>
+    </StoreProvider>
   );
 }
 
-function NaoEncontrado() {
+function NotFound() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-32 text-center">
-      <p className="font-display text-6xl font-extrabold text-accent/25">404</p>
+      <p className="font-display text-6xl font-extrabold text-surface-3">404</p>
       <h1 className="mt-3 font-display text-2xl font-bold">Página não encontrada</h1>
       <p className="mt-2 text-sm text-ink-muted">O endereço acessado não existe nesta loja.</p>
     </div>

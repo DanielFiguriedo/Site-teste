@@ -1,103 +1,117 @@
 import { useEffect, useId, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import type { Plataforma, Produto } from "@shared/types";
-import { formatarBRL } from "@shared/dinheiro";
+import type { Platform, Product } from "@shared/types";
+import { formatBRL } from "@shared/money";
 import { api, useApi } from "../lib/api";
-import { nickValido, useJogador } from "../lib/nick";
-import { AvatarNick } from "../components/AvatarNick";
-import { useLoja } from "../lib/loja-context";
-import { Botao } from "../components/Botao";
-import { IconeCategoria, IconeInfo } from "../components/Icones";
+import { isValidNick, usePlayer } from "../lib/player";
+import { PlayerAvatar } from "../components/PlayerAvatar";
+import { useStore } from "../lib/store-context";
+import { Button } from "../components/Button";
+import { CategoryIcon, InfoIcon } from "../components/Icons";
 import { Turnstile } from "../components/Turnstile";
 import { cn } from "../lib/cn";
 
-const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export function Checkout() {
   const [params] = useSearchParams();
-  const navegar = useNavigate();
-  const { config } = useLoja();
-  const { jogador, salvar } = useJogador();
+  const navigate = useNavigate();
+  const { settings } = useStore();
+  const { player, save } = usePlayer();
 
-  const slug = params.get("produto");
-  const quantidade = Math.max(1, Number(params.get("qtd") ?? 1));
-  const valorLivreCentavos = Number(params.get("valor") ?? 0);
+  const slug = params.get("product");
+  const quantity = Math.max(1, Number(params.get("qty") ?? 1));
+  const freeAmountCents = Number(params.get("amount") ?? 0);
 
-  const { dados: produto, carregando } = useApi<Produto>(slug ? `/produtos/${slug}` : null);
+  const { data: product, loading, error: loadError } = useApi<Product>(
+    slug ? `/products/${slug}` : null,
+  );
 
-  const [nick, setNick] = useState(jogador?.nick ?? "");
-  const [plataforma, setPlataforma] = useState<Plataforma>(jogador?.plataforma ?? "java");
+  const [nick, setNick] = useState(player?.nick ?? "");
+  const [platform, setPlatform] = useState<Platform>(player?.platform ?? "java");
   const [email, setEmail] = useState("");
-  const [presentear, setPresentear] = useState(false);
-  const [nickPresenteado, setNickPresenteado] = useState("");
-  const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState<string | undefined>();
+  const [gifting, setGifting] = useState(false);
+  const [recipientNick, setRecipientNick] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | undefined>();
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const idErroNick = useId();
-  const idErroEmail = useId();
-  const idErroPresente = useId();
 
-  // O nick salvo pode chegar depois da primeira renderização (leitura do
-  // localStorage no primeiro render, mas o hook revalida em `storage`).
+  const nickErrorId = useId();
+  const emailErrorId = useId();
+  const recipientErrorId = useId();
+
+  // The saved nick can arrive after the first render (localStorage is read on
+  // mount, but the hook revalidates on `storage`).
   useEffect(() => {
-    if (jogador && !nick) {
-      setNick(jogador.nick);
-      setPlataforma(jogador.plataforma);
+    if (player && !nick) {
+      setNick(player.nick);
+      setPlatform(player.platform);
     }
-  }, [jogador, nick]);
+  }, [player, nick]);
 
-  if (!slug) {
-    return <Aviso titulo="Nenhum produto selecionado" acao="Escolher um produto" />;
-  }
-  if (carregando) {
+  if (!slug) return <Notice title="Nenhum produto selecionado" action="Escolher um produto" />;
+
+  if (loading) {
     return (
       <div className="mx-auto max-w-3xl px-4 pt-12">
-        <div className="h-96 animate-pulse rounded-card bg-surface-1" />
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="space-y-5">
+            <div className="h-48 animate-pulse rounded-card bg-surface-1" />
+            <div className="h-36 animate-pulse rounded-card bg-surface-1" />
+          </div>
+          <div className="h-64 animate-pulse rounded-card bg-surface-1" />
+        </div>
       </div>
     );
   }
-  if (!produto) {
-    return <Aviso titulo="Produto não encontrado" acao="Voltar para a loja" />;
+
+  if (!product) {
+    return (
+      <Notice
+        title={loadError ? "Não foi possível carregar o produto" : "Produto não encontrado"}
+        action="Voltar para a loja"
+      />
+    );
   }
 
-  const precoUnitario = produto.precoLivre ? valorLivreCentavos : produto.precoCentavos;
-  const qtd = produto.precoLivre ? 1 : quantidade;
-  const total = precoUnitario * qtd;
+  const unitPrice = product.payWhatYouWant ? freeAmountCents : product.priceCents;
+  const qty = product.payWhatYouWant ? 1 : quantity;
+  const total = unitPrice * qty;
 
-  const nickOk = nickValido(nick, plataforma);
-  const emailOk = REGEX_EMAIL.test(email.trim());
-  const presenteOk = !presentear || nickValido(nickPresenteado, plataforma);
-  // Quando o Turnstile está configurado, o botão só libera com o token — o
-  // servidor recusaria de qualquer forma, e barrar aqui evita perder o form.
-  const turnstileOk = !config?.turnstileSiteKey || turnstileToken !== null;
-  const podeEnviar = nickOk && emailOk && presenteOk && turnstileOk && total > 0 && !enviando;
+  const nickOk = isValidNick(nick, platform);
+  const emailOk = EMAIL_PATTERN.test(email.trim());
+  const recipientOk = !gifting || isValidNick(recipientNick, platform);
+  // When Turnstile is configured the button only unlocks with a token — the
+  // server would reject it anyway, and blocking here avoids losing the form.
+  const turnstileOk = !settings?.turnstileSiteKey || turnstileToken !== null;
+  const canSubmit = nickOk && emailOk && recipientOk && turnstileOk && total > 0 && !submitting;
 
-  const enviar = async () => {
-    if (!podeEnviar) return;
-    setEnviando(true);
-    setErro(undefined);
+  const submit = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(undefined);
 
-    // Guarda o nick para as próximas compras — digitar de novo é a chance de errar.
-    salvar({ nick: nick.trim(), plataforma });
+    // Save the nick for next time — retyping it is the chance to get it wrong.
+    save({ nick: nick.trim(), platform });
 
     try {
-      const resposta = await api<{ publicId: string }>("/checkout", {
+      const response = await api<{ publicId: string }>("/checkout", {
         method: "POST",
         body: JSON.stringify({
-          produtoSlug: produto.slug,
-          quantidade: qtd,
-          ...(produto.precoLivre ? { valorCentavos: valorLivreCentavos } : {}),
+          productSlug: product.slug,
+          quantity: qty,
+          ...(product.payWhatYouWant ? { amountCents: freeAmountCents } : {}),
           nick: nick.trim(),
-          plataforma,
+          platform,
           email: email.trim(),
-          ...(presentear ? { nickPresenteado: nickPresenteado.trim() } : {}),
+          ...(gifting ? { recipientNick: recipientNick.trim() } : {}),
           ...(turnstileToken ? { turnstileToken } : {}),
         }),
       });
-      navegar(`/pedido/${resposta.publicId}`);
+      navigate(`/order/${response.publicId}`);
     } catch (e) {
-      setErro((e as Error).message);
-      setEnviando(false);
+      setError((e as Error).message);
+      setSubmitting(false);
     }
   };
 
@@ -110,13 +124,15 @@ export function Checkout() {
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
         <div className="space-y-5">
-          <Bloco titulo="Quem vai receber">
+          <Block title="Quem vai receber">
             <div className="flex items-start gap-3">
               <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-control border border-line bg-surface-inset">
                 {nickOk ? (
-                  <AvatarNick nick={nick.trim()} tamanho={54} />
+                  <PlayerAvatar nick={nick.trim()} size={54} />
                 ) : (
-                  <span className="text-xs text-ink-faint">?</span>
+                  <span className="text-xs text-ink-faint" aria-hidden="true">
+                    ?
+                  </span>
                 )}
               </div>
 
@@ -130,7 +146,7 @@ export function Checkout() {
                     autoComplete="off"
                     spellCheck={false}
                     aria-invalid={Boolean(nick) && !nickOk}
-                    aria-describedby={nick && !nickOk ? idErroNick : undefined}
+                    aria-describedby={nick && !nickOk ? nickErrorId : undefined}
                     className={cn(
                       "h-14 w-full rounded-control border bg-surface-inset px-4",
                       "font-display text-lg font-semibold outline-none transition-colors",
@@ -139,8 +155,8 @@ export function Checkout() {
                   />
                 </label>
                 {nick && !nickOk && (
-                  <p id={idErroNick} className="mt-1.5 text-xs text-danger">
-                    Nick inválido para {plataforma === "java" ? "Java" : "Bedrock"}.
+                  <p id={nickErrorId} className="mt-1.5 text-xs text-danger">
+                    Nick inválido para {platform === "java" ? "Java" : "Bedrock"}.
                   </p>
                 )}
               </div>
@@ -149,27 +165,27 @@ export function Checkout() {
             <fieldset className="mt-4">
               <legend className="sr-only">Plataforma</legend>
               <div className="grid grid-cols-2 gap-2">
-              {(["java", "bedrock"] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPlataforma(p)}
-                  aria-pressed={plataforma === p}
-                  className={cn(
-                    "h-11 rounded-control border text-sm font-semibold transition-colors",
-                    plataforma === p
-                      ? "border-accent bg-accent/12 text-accent"
-                      : "border-line bg-surface-2 text-ink-muted hover:text-ink",
-                  )}
-                >
-                  {p === "java" ? "Java" : "Bedrock"}
-                </button>
-              ))}
+                {(["java", "bedrock"] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setPlatform(option)}
+                    aria-pressed={platform === option}
+                    className={cn(
+                      "h-11 rounded-control border text-sm font-semibold transition-colors",
+                      platform === option
+                        ? "border-accent bg-accent/12 text-accent"
+                        : "border-line bg-surface-2 text-ink-muted hover:text-ink",
+                    )}
+                  >
+                    {option === "java" ? "Java" : "Bedrock"}
+                  </button>
+                ))}
               </div>
             </fieldset>
-          </Bloco>
+          </Block>
 
-          <Bloco titulo="Contato">
+          <Block title="Contato">
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 E-mail
@@ -181,7 +197,7 @@ export function Checkout() {
                 placeholder="voce@exemplo.com"
                 autoComplete="email"
                 aria-invalid={Boolean(email) && !emailOk}
-                aria-describedby={email && !emailOk ? idErroEmail : undefined}
+                aria-describedby={email && !emailOk ? emailErrorId : undefined}
                 className={cn(
                   "h-12 w-full rounded-control border bg-surface-inset px-4 text-sm outline-none transition-colors",
                   email && !emailOk ? "border-danger" : "border-line focus:border-accent",
@@ -189,22 +205,22 @@ export function Checkout() {
               />
             </label>
             {email && !emailOk && (
-              <p id={idErroEmail} className="mt-1.5 text-xs text-danger">
+              <p id={emailErrorId} className="mt-1.5 text-xs text-danger">
                 Digite um e-mail válido, como voce@exemplo.com.
               </p>
             )}
-            <p className="mt-2 text-xs text-ink-faint">
+            <p className="mt-2 text-xs text-ink-muted">
               Usado para o recibo do Pix e para falarmos com você se algo der errado na entrega.
             </p>
-          </Bloco>
+          </Block>
 
-          {produto.presenteavel && (
-            <Bloco titulo="Presentear">
+          {product.giftable && (
+            <Block title="Presentear">
               <label className="flex cursor-pointer items-center gap-3">
                 <input
                   type="checkbox"
-                  checked={presentear}
-                  onChange={(e) => setPresentear(e.target.checked)}
+                  checked={gifting}
+                  onChange={(e) => setGifting(e.target.checked)}
                   className="h-4 w-4 accent-accent"
                 />
                 <span className="text-sm text-ink-muted">
@@ -212,36 +228,38 @@ export function Checkout() {
                 </span>
               </label>
 
-              {presentear && (
+              {gifting && (
                 <>
-                <label className="mt-4 block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                    Nick de quem vai receber
-                  </span>
-                  <input
-                    value={nickPresenteado}
-                    onChange={(e) => setNickPresenteado(e.target.value)}
-                    placeholder="NickDoAmigo"
-                    autoComplete="off"
-                    spellCheck={false}
-                    aria-invalid={Boolean(nickPresenteado) && !presenteOk}
-                    aria-describedby={nickPresenteado && !presenteOk ? idErroPresente : undefined}
-                    className={cn(
-                      "h-12 w-full rounded-control border bg-surface-inset px-4 text-sm outline-none transition-colors",
-                      nickPresenteado && !presenteOk
-                        ? "border-danger"
-                        : "border-line focus:border-accent",
-                    )}
-                  />
-                </label>
-                {nickPresenteado && !presenteOk && (
-                  <p id={idErroPresente} className="mt-1.5 text-xs text-danger">
-                    Nick inválido. Confira com quem vai receber o presente.
-                  </p>
-                )}
+                  <label className="mt-4 block">
+                    <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                      Nick de quem vai receber
+                    </span>
+                    <input
+                      value={recipientNick}
+                      onChange={(e) => setRecipientNick(e.target.value)}
+                      placeholder="NickDoAmigo"
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-invalid={Boolean(recipientNick) && !recipientOk}
+                      aria-describedby={
+                        recipientNick && !recipientOk ? recipientErrorId : undefined
+                      }
+                      className={cn(
+                        "h-12 w-full rounded-control border bg-surface-inset px-4 text-sm outline-none transition-colors",
+                        recipientNick && !recipientOk
+                          ? "border-danger"
+                          : "border-line focus:border-accent",
+                      )}
+                    />
+                  </label>
+                  {recipientNick && !recipientOk && (
+                    <p id={recipientErrorId} className="mt-1.5 text-xs text-danger">
+                      Nick inválido. Confira com quem vai receber o presente.
+                    </p>
+                  )}
                 </>
               )}
-            </Bloco>
+            </Block>
           )}
         </div>
 
@@ -253,12 +271,12 @@ export function Checkout() {
 
             <div className="mt-4 flex gap-3">
               <span className="grid h-12 w-12 shrink-0 place-items-center rounded-control bg-surface-inset p-2.5 text-ink-faint">
-                <IconeCategoria nome={produto.categoriaSlug} />
+                <CategoryIcon name={product.categorySlug} />
               </span>
               <div className="min-w-0">
-                <p className="font-display text-sm font-bold leading-snug">{produto.nome}</p>
+                <p className="font-display text-sm font-bold leading-snug">{product.name}</p>
                 <p className="tabular text-xs text-ink-muted">
-                  {qtd} × {formatarBRL(precoUnitario)}
+                  {qty} × {formatBRL(unitPrice)}
                 </p>
               </div>
             </div>
@@ -266,32 +284,35 @@ export function Checkout() {
             <div className="mt-4 flex items-baseline justify-between border-t border-line pt-4">
               <span className="text-sm text-ink-muted">Total</span>
               <span className="tabular font-display text-2xl font-extrabold text-accent">
-                {formatarBRL(total)}
+                {formatBRL(total)}
               </span>
             </div>
 
-            {config?.turnstileSiteKey && (
+            {settings?.turnstileSiteKey && (
               <div className="mt-4">
-                <Turnstile siteKey={config.turnstileSiteKey} aoResolver={setTurnstileToken} />
+                <Turnstile siteKey={settings.turnstileSiteKey} onResolve={setTurnstileToken} />
               </div>
             )}
 
-            {erro && (
-              <p role="alert" className="mt-4 rounded-control border border-danger/25 bg-danger/10 p-3 text-xs text-danger">
-                {erro}
+            {error && (
+              <p
+                role="alert"
+                className="mt-4 rounded-control border border-danger/25 bg-danger/10 p-3 text-xs text-danger"
+              >
+                {error}
               </p>
             )}
 
-            <Botao tamanho="lg" className="mt-5 w-full" disabled={!podeEnviar} onClick={enviar}>
-              {enviando ? "Gerando Pix..." : "Gerar Pix"}
-            </Botao>
+            <Button size="lg" className="mt-5 w-full" disabled={!canSubmit} onClick={submit}>
+              {submitting ? "Gerando Pix..." : "Gerar Pix"}
+            </Button>
 
             <div className="mt-4 flex gap-2.5 border-t border-line pt-4">
               <span className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted">
-                <IconeInfo />
+                <InfoIcon />
               </span>
               <p className="text-xs leading-relaxed text-ink-muted">
-                {config?.avisoEntrega ??
+                {settings?.deliveryNotice ??
                   "A entrega é feita manualmente pela equipe após a confirmação do Pix."}
               </p>
             </div>
@@ -302,21 +323,21 @@ export function Checkout() {
   );
 }
 
-function Bloco({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-card border border-line bg-surface-1 p-5">
-      <h2 className="mb-4 font-display text-base font-bold">{titulo}</h2>
+      <h2 className="mb-4 font-display text-base font-bold">{title}</h2>
       {children}
     </section>
   );
 }
 
-function Aviso({ titulo, acao }: { titulo: string; acao: string }) {
+function Notice({ title, action }: { title: string; action: string }) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-28 text-center">
-      <h1 className="font-display text-2xl font-bold">{titulo}</h1>
-      <Link to="/loja" className="mt-6 inline-block text-sm font-semibold text-accent">
-        {acao}
+      <h1 className="font-display text-2xl font-bold">{title}</h1>
+      <Link to="/shop" className="mt-6 inline-block text-sm font-semibold text-accent">
+        {action}
       </Link>
     </div>
   );

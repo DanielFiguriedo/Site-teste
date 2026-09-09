@@ -9,14 +9,14 @@
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "cf-typegen": "wrangler types",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply loja-minecraft --local",
     "db:migrate:remote": "wrangler d1 migrations apply loja-minecraft --remote",
     "db:seed:local": "wrangler d1 execute loja-minecraft --local --file=./seed.sql",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "admin:criar": "node scripts/criar-admin.mjs"
+    "admin:create": "node scripts/create-admin.mjs"
   },
   "dependencies": {
     "@types/node": "^26.5.0",
@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.54.6",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
@@ -40,7 +41,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
-    "vitest": "^5.0.0",
+    "vitest": "^4.1.11",
     "wrangler": "^4.130.0"
   },
   "allowScripts": {
@@ -48,6 +49,7 @@
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true,
     "esbuild@0.28.1": true,
-    "workerd@1.20260908.1": true
+    "workerd@1.20260908.1": true,
+    "workerd@1.20260815.1": true
   }
 }

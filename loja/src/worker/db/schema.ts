@@ -1,177 +1,180 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-const agora = sql`(unixepoch())`;
+const now = sql`(unixepoch())`;
 
 /**
- * Categorias da loja (VIP, Cash, Itens e Kits, Chaves).
+ * Store categories (VIP, Cash, Kits, Keys).
  *
- * `parentId` existe desde já para o dia em que o servidor tiver modalidades
- * (Survival, OneBlock...). Hoje todas as categorias são planas — criar a coluna
- * agora evita uma migração dolorosa depois.
+ * `parentId` exists from day one for when the server grows into several game
+ * modes. Today every category is flat — adding the column now avoids a painful
+ * migration later.
  */
-export const categorias = sqliteTable(
-  "categorias",
+export const categories = sqliteTable(
+  "categories",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     parentId: integer("parent_id"),
     slug: text("slug").notNull(),
-    nome: text("nome").notNull(),
-    descricao: text("descricao"),
-    icone: text("icone"),
-    ordem: integer("ordem").notNull().default(0),
-    ativo: integer("ativo", { mode: "boolean" }).notNull().default(true),
-    criadoEm: integer("criado_em").notNull().default(agora),
+    name: text("name").notNull(),
+    description: text("description"),
+    icon: text("icon"),
+    position: integer("position").notNull().default(0),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at").notNull().default(now),
   },
-  (t) => [uniqueIndex("idx_categorias_slug").on(t.slug), index("idx_categorias_ordem").on(t.ordem)],
+  (t) => [uniqueIndex("idx_categories_slug").on(t.slug), index("idx_categories_position").on(t.position)],
 );
 
-/** Produtos vendidos. Todo dinheiro é inteiro em centavos. */
-export const produtos = sqliteTable(
-  "produtos",
+/** Products for sale. All money is stored as an integer number of cents. */
+export const products = sqliteTable(
+  "products",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    categoriaId: integer("categoria_id")
+    categoryId: integer("category_id")
       .notNull()
-      .references(() => categorias.id, { onDelete: "restrict" }),
+      .references(() => categories.id, { onDelete: "restrict" }),
     slug: text("slug").notNull(),
-    nome: text("nome").notNull(),
-    descricaoCurta: text("descricao_curta"),
-    /** Markdown — usado no bloco "o que você vai receber". */
-    descricaoMd: text("descricao_md"),
-    precoCentavos: integer("preco_centavos").notNull(),
-    /** Preço "de" (riscado). Nulo quando não há promoção. */
-    precoDeCentavos: integer("preco_de_centavos"),
-    promocaoExpiraEm: integer("promocao_expira_em"),
-    /** Nulo = permanente. Preenchido nos VIPs por tempo (30, 90 dias...). */
-    duracaoDias: integer("duracao_dias"),
-    /** Chave do objeto no R2. A URL pública é montada pelo Worker. */
-    imagemKey: text("imagem_key"),
-    presenteavel: integer("presenteavel", { mode: "boolean" }).notNull().default(true),
-    /** Doação de valor livre: o comprador escolhe, respeitando precoCentavos como mínimo. */
-    precoLivre: integer("preco_livre", { mode: "boolean" }).notNull().default(false),
-    destaque: integer("destaque", { mode: "boolean" }).notNull().default(false),
-    /** Nulo = ilimitado. */
-    estoque: integer("estoque"),
-    ordem: integer("ordem").notNull().default(0),
-    ativo: integer("ativo", { mode: "boolean" }).notNull().default(true),
-    criadoEm: integer("criado_em").notNull().default(agora),
+    name: text("name").notNull(),
+    shortDescription: text("short_description"),
+    /** Markdown — drives the "what you get" block on the product page. */
+    descriptionMd: text("description_md"),
+    priceCents: integer("price_cents").notNull(),
+    /** Struck-through "was" price. Null when there is no sale. */
+    originalPriceCents: integer("original_price_cents"),
+    saleEndsAt: integer("sale_ends_at"),
+    /** Null means permanent. Set on time-limited VIP ranks (30, 90 days...). */
+    durationDays: integer("duration_days"),
+    /** R2 object key. The public URL is built by the Worker. */
+    imageKey: text("image_key"),
+    giftable: integer("giftable", { mode: "boolean" }).notNull().default(true),
+    /** Donation product: the buyer picks the amount, respecting `priceCents`. */
+    payWhatYouWant: integer("pay_what_you_want", { mode: "boolean" }).notNull().default(false),
+    featured: integer("featured", { mode: "boolean" }).notNull().default(false),
+    /** Null means unlimited. */
+    stock: integer("stock"),
+    position: integer("position").notNull().default(0),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at").notNull().default(now),
   },
   (t) => [
-    uniqueIndex("idx_produtos_slug").on(t.slug),
-    index("idx_produtos_categoria").on(t.categoriaId),
-    index("idx_produtos_ativo_ordem").on(t.ativo, t.ordem),
+    uniqueIndex("idx_products_slug").on(t.slug),
+    index("idx_products_category").on(t.categoryId),
+    index("idx_products_active_position").on(t.active, t.position),
   ],
 );
 
 /**
- * Pedidos.
+ * Orders.
  *
- * `publicId` é um token aleatório usado na URL de pagamento — o `id` sequencial
- * nunca aparece publicamente, senão qualquer um adivinharia o pedido do vizinho.
+ * `publicId` is a random token used in the payment URL — the sequential `id`
+ * never leaves the database, so nobody can guess a stranger's order.
  */
-export const pedidos = sqliteTable(
-  "pedidos",
+export const orders = sqliteTable(
+  "orders",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     publicId: text("public_id").notNull(),
     nick: text("nick").notNull(),
-    plataforma: text("plataforma", { enum: ["java", "bedrock"] }).notNull().default("java"),
+    platform: text("platform", { enum: ["java", "bedrock"] }).notNull().default("java"),
     email: text("email"),
-    /** Nulo quando a compra é para o próprio comprador. */
-    nickPresenteado: text("nick_presenteado"),
-    totalCentavos: integer("total_centavos").notNull(),
+    /** Null when the buyer is purchasing for themselves. */
+    recipientNick: text("recipient_nick"),
+    totalCents: integer("total_cents").notNull(),
     status: text("status", {
       enum: [
-        "aguardando_pagamento",
-        "pago",
-        "em_revisao",
-        "entregue",
-        "expirado",
-        "cancelado",
-        "reembolsado",
+        "awaiting_payment",
+        "paid",
+        "needs_review",
+        "delivered",
+        "expired",
+        "cancelled",
+        "refunded",
       ],
     })
       .notNull()
-      .default("aguardando_pagamento"),
+      .default("awaiting_payment"),
     provider: text("provider").notNull(),
     providerChargeId: text("provider_charge_id"),
-    pixCopiaCola: text("pix_copia_cola"),
+    /** The Pix BR Code, shown in the UI as "copia e cola". */
+    pixBrCode: text("pix_br_code"),
     pixQrBase64: text("pix_qr_base64"),
-    expiraEm: integer("expira_em"),
-    pagoEm: integer("pago_em"),
-    entregueEm: integer("entregue_em"),
-    entreguePor: text("entregue_por"),
-    notaAdmin: text("nota_admin"),
+    expiresAt: integer("expires_at"),
+    paidAt: integer("paid_at"),
+    deliveredAt: integer("delivered_at"),
+    deliveredBy: text("delivered_by"),
+    adminNote: text("admin_note"),
     ip: text("ip"),
-    criadoEm: integer("criado_em").notNull().default(agora),
+    createdAt: integer("created_at").notNull().default(now),
   },
   (t) => [
-    uniqueIndex("idx_pedidos_public_id").on(t.publicId),
-    index("idx_pedidos_status_criado").on(t.status, t.criadoEm),
-    index("idx_pedidos_charge").on(t.providerChargeId),
-    index("idx_pedidos_nick").on(t.nick),
+    uniqueIndex("idx_orders_public_id").on(t.publicId),
+    index("idx_orders_status_created").on(t.status, t.createdAt),
+    index("idx_orders_charge").on(t.providerChargeId),
+    index("idx_orders_nick").on(t.nick),
+    index("idx_orders_ip_status").on(t.ip, t.status),
   ],
 );
 
 /**
- * Snapshot imutável do produto no momento da compra.
+ * Immutable snapshot of the product at purchase time.
  *
- * Repetir nome e preço aqui é proposital: mudar o preço de um produto amanhã
- * não pode reescrever o histórico de vendas de ontem.
+ * Repeating name and price here is deliberate: changing a product's price
+ * tomorrow must not rewrite what was sold yesterday.
  */
-export const pedidoItens = sqliteTable(
-  "pedido_itens",
+export const orderItems = sqliteTable(
+  "order_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    pedidoId: integer("pedido_id")
+    orderId: integer("order_id")
       .notNull()
-      .references(() => pedidos.id, { onDelete: "cascade" }),
-    produtoId: integer("produto_id").notNull(),
-    nome: text("nome").notNull(),
-    precoCentavos: integer("preco_centavos").notNull(),
-    quantidade: integer("quantidade").notNull(),
-    imagemKey: text("imagem_key"),
+      .references(() => orders.id, { onDelete: "cascade" }),
+    productId: integer("product_id").notNull(),
+    name: text("name").notNull(),
+    priceCents: integer("price_cents").notNull(),
+    quantity: integer("quantity").notNull(),
+    imageKey: text("image_key"),
   },
-  (t) => [index("idx_pedido_itens_pedido").on(t.pedidoId)],
+  (t) => [index("idx_order_items_order").on(t.orderId)],
 );
 
 /**
- * Eventos de webhook já processados.
+ * Webhook events already processed.
  *
- * O `eventoId` UNIQUE é o que garante idempotência: o Mercado Pago reenvia
- * webhooks, e sem isto o mesmo pedido seria marcado como pago duas vezes.
+ * The UNIQUE on `(provider, event_id)` is what guarantees idempotency: Mercado
+ * Pago retries webhooks, and without it the same order would be marked paid
+ * twice — and the owner would deliver the item twice.
  */
-export const webhookEventos = sqliteTable(
-  "webhook_eventos",
+export const webhookEvents = sqliteTable(
+  "webhook_events",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     provider: text("provider").notNull(),
-    eventoId: text("evento_id").notNull(),
-    tipo: text("tipo"),
+    eventId: text("event_id").notNull(),
+    type: text("type"),
     payload: text("payload"),
-    recebidoEm: integer("recebido_em").notNull().default(agora),
+    receivedAt: integer("received_at").notNull().default(now),
   },
-  (t) => [uniqueIndex("idx_webhook_evento_unico").on(t.provider, t.eventoId)],
+  (t) => [uniqueIndex("idx_webhook_event_unique").on(t.provider, t.eventId)],
 );
 
-/** Usuários do painel administrativo. Senha com PBKDF2 via WebCrypto. */
-export const adminUsuarios = sqliteTable(
-  "admin_usuarios",
+/** Admin panel users. Passwords hashed with PBKDF2 through WebCrypto. */
+export const adminUsers = sqliteTable(
+  "admin_users",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     email: text("email").notNull(),
-    senhaHash: text("senha_hash").notNull(),
-    nome: text("nome"),
-    ultimoLogin: integer("ultimo_login"),
-    criadoEm: integer("criado_em").notNull().default(agora),
+    passwordHash: text("password_hash").notNull(),
+    name: text("name"),
+    lastLoginAt: integer("last_login_at"),
+    createdAt: integer("created_at").notNull().default(now),
   },
-  (t) => [uniqueIndex("idx_admin_email").on(t.email)],
+  (t) => [uniqueIndex("idx_admin_users_email").on(t.email)],
 );
 
-/** Configuração editável da loja (chave/valor), para o dono não precisar de deploy. */
-export const config = sqliteTable("config", {
-  chave: text("chave").primaryKey(),
-  valor: text("valor"),
-  atualizadoEm: integer("atualizado_em").notNull().default(agora),
+/** Editable store settings (key/value), so the owner never needs a deploy. */
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: integer("updated_at").notNull().default(now),
 });

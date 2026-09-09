@@ -1,20 +1,20 @@
 import { Link } from "react-router";
-import type { Produto } from "@shared/types";
+import type { Product } from "@shared/types";
 import { useApi } from "../lib/api";
-import { useLoja } from "../lib/loja-context";
-import { useCopiar } from "../lib/copiar";
-import { BotaoLink, Botao } from "../components/Botao";
-import { ProdutoCard, ProdutoCardEsqueleto } from "../components/ProdutoCard";
-import { IconeCategoria, IconeCheque, IconeCopiar, IconeInfo } from "../components/Icones";
+import { useStore } from "../lib/store-context";
+import { useCopyToClipboard } from "../lib/clipboard";
+import { ButtonLink, Button } from "../components/Button";
+import { ProductCard, ProductCardSkeleton } from "../components/ProductCard";
+import { CategoryIcon, CheckIcon, CopyIcon, InfoIcon } from "../components/Icons";
 
 function Hero() {
-  const { config } = useLoja();
-  const { copiado, copiar } = useCopiar();
+  const { settings } = useStore();
+  const { copied, copy } = useCopyToClipboard();
 
   return (
     <section className="relative overflow-hidden border-b border-line">
       <div className="aurora absolute inset-0" aria-hidden="true" />
-      {/* Malha sutil de blocos — referência ao jogo sem cair em pixel art. */}
+      {/* Subtle block grid — a nod to the game without falling into pixel art. */}
       <div
         className="absolute inset-0 opacity-[0.035]"
         aria-hidden="true"
@@ -27,35 +27,37 @@ function Hero() {
       />
 
       <div className="relative mx-auto max-w-6xl px-4 pb-20 pt-20 text-center sm:pt-28">
-        <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-accent">
+        <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Loja oficial
         </p>
 
         <h1 className="mx-auto max-w-3xl font-display text-4xl font-extrabold leading-[1.08] sm:text-6xl">
-          Suba de nível no{" "}
-          <span className="text-accent">{config?.nomeServidor ?? "servidor"}</span>
+          Suba de nível no <span className="text-accent">{settings?.serverName ?? "servidor"}</span>
         </h1>
 
         <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-ink-muted">
-          VIPs, cash, kits e chaves com pagamento por Pix. A confirmação é
-          automática e a entrega é feita pela nossa equipe {config?.prazoEntrega ?? "rapidamente"}.
+          VIPs, cash, kits e chaves com pagamento por Pix. A confirmação é automática e a entrega é
+          feita pela nossa equipe {settings?.deliveryTime ?? "rapidamente"}.
         </p>
 
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-          <BotaoLink to="/loja" tamanho="lg">
+          <ButtonLink to="/shop" size="lg">
             Ver produtos
-          </BotaoLink>
+          </ButtonLink>
 
-          {config?.ipServidor && (
-            <Botao
-              variante="secundario"
-              tamanho="lg"
-              onClick={() => copiar(config.ipServidor!)}
+          {settings?.serverIp && (
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={() => copy(settings.serverIp!)}
               className="tabular"
+              aria-label={`Copiar o IP do servidor, ${settings.serverIp}`}
             >
-              <span className="h-4 w-4">{copiado ? <IconeCheque /> : <IconeCopiar />}</span>
-              {copiado ? "IP copiado!" : config.ipServidor}
-            </Botao>
+              <span className="h-4 w-4" aria-hidden="true">
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </span>
+              {copied ? "IP copiado!" : settings.serverIp}
+            </Button>
           )}
         </div>
       </div>
@@ -63,26 +65,28 @@ function Hero() {
   );
 }
 
-function Categorias() {
-  const { categorias } = useLoja();
-  if (categorias.length === 0) return null;
+function Categories() {
+  const { categories } = useStore();
+  if (categories.length === 0) return null;
 
   return (
     <section className="mx-auto -mt-10 max-w-6xl px-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {categorias.map((c) => (
+        {categories.map((category) => (
           <Link
-            key={c.id}
-            to={`/loja?categoria=${c.slug}`}
+            key={category.id}
+            to={`/shop?category=${category.slug}`}
             className="group flex items-center gap-3 rounded-card border border-line bg-surface-1 p-4 shadow-card transition-all duration-300 ease-[var(--ease-out-soft)] hover:-translate-y-0.5 hover:border-line-strong hover:shadow-lift"
           >
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-control bg-surface-2 p-2.5 text-ink-muted transition-colors group-hover:text-ink">
-              <IconeCategoria nome={c.icone} />
+              <CategoryIcon name={category.icon} />
             </span>
             <span className="min-w-0">
-              <span className="block font-display text-sm font-bold">{c.nome}</span>
-              {c.descricao && (
-                <span className="block truncate text-xs text-ink-muted">{c.descricao}</span>
+              <span className="block font-display text-sm font-bold">{category.name}</span>
+              {category.description && (
+                <span className="block truncate text-xs text-ink-muted">
+                  {category.description}
+                </span>
               )}
             </span>
           </Link>
@@ -92,12 +96,12 @@ function Categorias() {
   );
 }
 
-function Destaques() {
-  const { dados, carregando, erro } = useApi<Produto[]>("/produtos?destaque=1");
+function Featured() {
+  const { data, loading, error } = useApi<Product[]>("/products?featured=1");
 
-  // Sem destaque cadastrado a seção inteira some, em vez de deixar um título
-  // solto sobre um vazio.
-  if (!carregando && !erro && dados?.length === 0) return null;
+  // With nothing featured the whole section disappears, instead of leaving a
+  // lone heading above an empty area.
+  if (!loading && !error && data?.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-6xl px-4 pt-20">
@@ -106,71 +110,71 @@ function Destaques() {
           <h2 className="font-display text-2xl font-bold sm:text-3xl">Em destaque</h2>
           <p className="mt-1 text-sm text-ink-muted">O que os jogadores mais compram.</p>
         </div>
-        <Link
-          to="/loja"
-          className="shrink-0 text-sm font-semibold text-accent hover:text-accent-hover"
-        >
+        <Link to="/shop" className="shrink-0 text-sm font-semibold text-ink-muted hover:text-ink">
           Ver tudo →
         </Link>
       </div>
 
-      {erro ? (
-        <p role="alert" className="rounded-card border border-line bg-surface-1 p-6 text-sm text-ink-muted">
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-card border border-line bg-surface-1 p-6 text-sm text-ink-muted"
+        >
           Não foi possível carregar os produtos agora. Recarregue a página em instantes.
         </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {carregando
-            ? Array.from({ length: 4 }, (_, i) => <ProdutoCardEsqueleto key={i} />)
-            : dados?.map((p) => <ProdutoCard key={p.id} produto={p} />)}
+          {loading
+            ? Array.from({ length: 4 }, (_, index) => <ProductCardSkeleton key={index} />)
+            : data?.map((product) => <ProductCard key={product.id} product={product} />)}
         </div>
       )}
     </section>
   );
 }
 
-const PASSOS = [
+const STEPS = [
   {
-    titulo: "Escolha o produto",
-    texto: "Selecione o VIP, o cash ou o item que você quer e informe o seu nick.",
+    title: "Escolha o produto",
+    text: "Selecione o VIP, o cash ou o item que você quer e informe o seu nick.",
   },
   {
-    titulo: "Pague com Pix",
-    texto: "Escaneie o QR Code ou use o copia e cola. A confirmação é automática.",
+    title: "Pague com Pix",
+    text: "Escaneie o QR Code ou use o copia e cola. A confirmação é automática.",
   },
   {
-    titulo: "Receba no jogo",
-    texto: "Nossa equipe entrega o item no seu nick e você acompanha o status pelo site.",
+    title: "Receba no jogo",
+    text: "Nossa equipe entrega o item no seu nick e você acompanha o status pelo site.",
   },
 ];
 
-function ComoFunciona() {
-  const { config } = useLoja();
+function HowItWorks() {
+  const { settings } = useStore();
 
   return (
     <section className="mx-auto max-w-6xl px-4 pt-24">
       <h2 className="font-display text-2xl font-bold sm:text-3xl">Como funciona</h2>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        {PASSOS.map((p, i) => (
-          <div key={p.titulo} className="rounded-card border border-line bg-surface-1 p-5">
+        {STEPS.map((step, index) => (
+          <div key={step.title} className="rounded-card border border-line bg-surface-1 p-5">
             <span className="font-display text-3xl font-extrabold text-surface-3">
-              {String(i + 1).padStart(2, "0")}
+              {String(index + 1).padStart(2, "0")}
             </span>
-            <h3 className="mt-2 font-display text-base font-bold">{p.titulo}</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{p.texto}</p>
+            <h3 className="mt-2 font-display text-base font-bold">{step.title}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{step.text}</p>
           </div>
         ))}
       </div>
 
-      {/* Dito de forma explícita e cedo: a entrega não é instantânea. Esconder
-          isso só transferiria a frustração para o suporte depois da compra. */}
-      {config?.avisoEntrega && (
+      {/* Said plainly and early: delivery is not instant. Hiding it would only
+          move the frustration to support after the purchase. */}
+      {settings?.deliveryNotice && (
         <div className="mt-4 flex gap-3 rounded-card border border-warn/25 bg-warn/8 p-4">
           <span className="mt-0.5 h-4 w-4 shrink-0 text-warn">
-            <IconeInfo />
+            <InfoIcon />
           </span>
-          <p className="text-sm leading-relaxed text-ink-muted">{config.avisoEntrega}</p>
+          <p className="text-sm leading-relaxed text-ink-muted">{settings.deliveryNotice}</p>
         </div>
       )}
     </section>
@@ -181,9 +185,9 @@ export function Home() {
   return (
     <>
       <Hero />
-      <Categorias />
-      <Destaques />
-      <ComoFunciona />
+      <Categories />
+      <Featured />
+      <HowItWorks />
     </>
   );
 }

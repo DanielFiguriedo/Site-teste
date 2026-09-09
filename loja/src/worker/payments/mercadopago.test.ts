@@ -1,109 +1,126 @@
 import { describe, expect, it } from "vitest";
 import { MercadoPagoProvider } from "./mercadopago";
-import { comparaSegura, hmacSha256Hex } from "./provider";
+import { timingSafeEqual, hmacSha256Hex } from "./provider";
 
-const SEGREDO = "segredo-do-webhook-do-painel";
-const provider = new MercadoPagoProvider("token-qualquer", SEGREDO);
+const SECRET = "webhook-secret-from-the-panel";
+const provider = new MercadoPagoProvider("any-token", SECRET);
 
 /**
- * Monta um webhook válido do jeito que o Mercado Pago monta.
+ * Builds a valid webhook the way Mercado Pago builds it.
  *
- * O `ts` é gerado agora de propósito: a verificação recusa assinaturas velhas,
- * então um timestamp fixo no código passaria a falhar com o tempo.
+ * The `ts` is generated now on purpose: verification rejects stale signatures,
+ * so a timestamp hard-coded in the file would start failing over time.
  */
-async function webhookAssinado(chargeId: string, requestId = "req-123", segundosAtras = 0) {
-  const corpo = JSON.stringify({
+async function signedWebhook(chargeId: string, requestId = "req-123", secondsAgo = 0) {
+  const body = JSON.stringify({
     id: 987654,
     type: "payment",
     action: "payment.updated",
     data: { id: chargeId },
   });
-  const ts = String(Math.floor(Date.now() / 1000) - segundosAtras);
-  const manifesto = `id:${chargeId.toLowerCase()};request-id:${requestId};ts:${ts};`;
-  const v1 = await hmacSha256Hex(SEGREDO, manifesto);
+  const ts = String(Math.floor(Date.now() / 1000) - secondsAgo);
+  const manifest = `id:${chargeId.toLowerCase()};request-id:${requestId};ts:${ts};`;
+  const v1 = await hmacSha256Hex(SECRET, manifest);
 
   return {
-    corpo,
-    cabecalhos: new Headers({
+    body,
+    headers: new Headers({
       "x-signature": `ts=${ts},v1=${v1}`,
       "x-request-id": requestId,
     }),
   };
 }
 
-describe("verificarAssinaturaWebhook", () => {
-  it("aceita uma assinatura legítima", async () => {
-    const { corpo, cabecalhos } = await webhookAssinado("112233");
-    expect(await provider.verificarAssinaturaWebhook(corpo, cabecalhos)).toBe(true);
+describe("verifyWebhookSignature", () => {
+  it("accepts a legitimate signature", async () => {
+    const { body, headers } = await signedWebhook("112233");
+    expect(await provider.verifyWebhookSignature(body, headers)).toBe(true);
   });
 
-  it("recusa quando o segredo é outro", async () => {
-    const outro = new MercadoPagoProvider("token", "segredo-errado");
-    const { corpo, cabecalhos } = await webhookAssinado("112233");
-    expect(await outro.verificarAssinaturaWebhook(corpo, cabecalhos)).toBe(false);
+  it("rejects a signature made with a different secret", async () => {
+    const other = new MercadoPagoProvider("token", "wrong-secret");
+    const { body, headers } = await signedWebhook("112233");
+    expect(await other.verifyWebhookSignature(body, headers)).toBe(false);
   });
 
-  it("recusa quando o corpo é adulterado depois de assinado", async () => {
-    const { cabecalhos } = await webhookAssinado("112233");
-    // O atacante troca a cobrança referenciada, mantendo a assinatura original.
-    const adulterado = JSON.stringify({
+  it("rejects a body tampered with after signing", async () => {
+    const { headers } = await signedWebhook("112233");
+    // The attacker swaps the referenced charge, keeping the original signature.
+    const tampered = JSON.stringify({
       id: 987654,
       type: "payment",
       action: "payment.updated",
       data: { id: "999999" },
     });
-    expect(await provider.verificarAssinaturaWebhook(adulterado, cabecalhos)).toBe(false);
+    expect(await provider.verifyWebhookSignature(tampered, headers)).toBe(false);
   });
 
-  it("recusa quando o x-request-id não bate", async () => {
-    const { corpo, cabecalhos } = await webhookAssinado("112233", "req-123");
-    cabecalhos.set("x-request-id", "req-outro");
-    expect(await provider.verificarAssinaturaWebhook(corpo, cabecalhos)).toBe(false);
+  it("rejects a mismatched x-request-id", async () => {
+    const { body, headers } = await signedWebhook("112233", "req-123");
+    headers.set("x-request-id", "req-other");
+    expect(await provider.verifyWebhookSignature(body, headers)).toBe(false);
   });
 
-  it("recusa quando não há cabeçalho de assinatura", async () => {
-    const { corpo } = await webhookAssinado("112233");
-    expect(await provider.verificarAssinaturaWebhook(corpo, new Headers())).toBe(false);
+  it("rejects a request with no signature header", async () => {
+    const { body } = await signedWebhook("112233");
+    expect(await provider.verifyWebhookSignature(body, new Headers())).toBe(false);
   });
 
-  it("recusa corpo que não é JSON", async () => {
-    const { cabecalhos } = await webhookAssinado("112233");
-    expect(await provider.verificarAssinaturaWebhook("<html>erro</html>", cabecalhos)).toBe(false);
+  it("rejects a malformed signature header", async () => {
+    const { body } = await signedWebhook("112233");
+    const headers = new Headers({ "x-signature": "not-a-signature", "x-request-id": "req-123" });
+    expect(await provider.verifyWebhookSignature(body, headers)).toBe(false);
   });
 
-  it("recusa uma assinatura antiga, mesmo sendo legítima", async () => {
-    // Fecha a janela de reenvio de uma requisição capturada.
-    const { corpo, cabecalhos } = await webhookAssinado("112233", "req-123", 3600);
-    expect(await provider.verificarAssinaturaWebhook(corpo, cabecalhos)).toBe(false);
+  it("rejects a body that is not JSON", async () => {
+    const { headers } = await signedWebhook("112233");
+    expect(await provider.verifyWebhookSignature("<html>error</html>", headers)).toBe(false);
   });
 
-  it("aceita uma assinatura dentro da tolerância", async () => {
-    const { corpo, cabecalhos } = await webhookAssinado("112233", "req-123", 60);
-    expect(await provider.verificarAssinaturaWebhook(corpo, cabecalhos)).toBe(true);
+  it("rejects an old signature, even a legitimate one", async () => {
+    // Closes the replay window on a captured request.
+    const { body, headers } = await signedWebhook("112233", "req-123", 3600);
+    expect(await provider.verifyWebhookSignature(body, headers)).toBe(false);
+  });
+
+  it("accepts a signature within the tolerance window", async () => {
+    const { body, headers } = await signedWebhook("112233", "req-123", 60);
+    expect(await provider.verifyWebhookSignature(body, headers)).toBe(true);
   });
 });
 
-describe("extrairEvento", () => {
-  it("extrai o id do evento e o da cobrança", async () => {
-    const { corpo, cabecalhos } = await webhookAssinado("112233");
-    expect(provider.extrairEvento(corpo, cabecalhos)).toEqual({
-      eventoId: "987654",
+describe("parseEvent", () => {
+  it("extracts the event id and the charge id", async () => {
+    const { body, headers } = await signedWebhook("112233");
+    expect(provider.parseEvent(body, headers)).toEqual({
+      eventId: "987654",
       chargeId: "112233",
-      tipo: "payment.updated",
+      type: "payment.updated",
     });
   });
 
-  it("ignora evento que não é de pagamento", () => {
-    const corpo = JSON.stringify({ id: 1, type: "plan", data: { id: "x" } });
-    expect(provider.extrairEvento(corpo, new Headers())).toBeNull();
+  it("falls back to x-request-id when the payload has no event id", () => {
+    const body = JSON.stringify({ type: "payment", action: "payment.updated", data: { id: "77" } });
+    const headers = new Headers({ "x-request-id": "req-abc" });
+    expect(provider.parseEvent(body, headers)?.eventId).toBe("req-abc");
+  });
+
+  it("ignores events that are not payments", () => {
+    const body = JSON.stringify({ id: 1, type: "plan", data: { id: "x" } });
+    expect(provider.parseEvent(body, new Headers())).toBeNull();
+  });
+
+  it("ignores a payload with no charge id", () => {
+    const body = JSON.stringify({ id: 1, type: "payment", data: {} });
+    expect(provider.parseEvent(body, new Headers())).toBeNull();
   });
 });
 
-describe("comparaSegura", () => {
-  it("compara conteúdo, não referência", () => {
-    expect(comparaSegura("abc", "abc")).toBe(true);
-    expect(comparaSegura("abc", "abd")).toBe(false);
-    expect(comparaSegura("abc", "abcd")).toBe(false);
-    expect(comparaSegura("", "")).toBe(true);
+describe("timingSafeEqual", () => {
+  it("compares content, not reference", () => {
+    expect(timingSafeEqual("abc", "abc")).toBe(true);
+    expect(timingSafeEqual("abc", "abd")).toBe(false);
+    expect(timingSafeEqual("abc", "abcd")).toBe(false);
+    expect(timingSafeEqual("", "")).toBe(true);
   });
 });

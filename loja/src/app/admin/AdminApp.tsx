@@ -1,29 +1,29 @@
 import { Link, NavLink, Route, Routes } from "react-router";
 import { useAdmin } from "./useAdmin";
 import { Login } from "./Login";
-import { PedidosAdmin } from "./Pedidos";
-import { ProdutosAdmin } from "./Produtos";
-import { ConfigAdmin } from "./Config";
-import { Botao } from "../components/Botao";
+import { AdminOrders } from "./Orders";
+import { AdminProducts } from "./Products";
+import { AdminSettings } from "./Settings";
+import { Button } from "../components/Button";
 import { cn } from "../lib/cn";
 
 const LINKS = [
-  { para: "/admin", rotulo: "Pedidos", exato: true },
-  { para: "/admin/produtos", rotulo: "Produtos", exato: false },
-  { para: "/admin/config", rotulo: "Configurações", exato: false },
+  { to: "/admin", label: "Pedidos", end: true },
+  { to: "/admin/products", label: "Produtos", end: false },
+  { to: "/admin/settings", label: "Configurações", end: false },
 ];
 
 /**
- * Painel administrativo.
+ * Admin panel.
  *
- * A guarda aqui é só de interface: quem decide de fato é o middleware
- * `exigirAdmin` no Worker. Esconder a tela sem proteger a API não protegeria
- * nada — qualquer um chamaria os endpoints direto.
+ * The guard here is UI only: the real decision is the `requireAdmin` middleware
+ * in the Worker. Hiding the screen without protecting the API would protect
+ * nothing — anyone could call the endpoints directly.
  */
 export function AdminApp() {
-  const { admin, verificando, verificar, sair } = useAdmin();
+  const { admin, checking, check, signOut } = useAdmin();
 
-  if (verificando) {
+  if (checking) {
     return (
       <div className="grid min-h-dvh place-items-center">
         <p className="text-sm text-ink-muted">Carregando painel...</p>
@@ -31,7 +31,7 @@ export function AdminApp() {
     );
   }
 
-  if (!admin) return <Login aoEntrar={verificar} />;
+  if (!admin) return <Login onSignIn={check} />;
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -42,11 +42,11 @@ export function AdminApp() {
           </Link>
 
           <nav className="flex items-center gap-1" aria-label="Seções do painel">
-            {LINKS.map((l) => (
+            {LINKS.map((link) => (
               <NavLink
-                key={l.para}
-                to={l.para}
-                end={l.exato}
+                key={link.to}
+                to={link.to}
+                end={link.end}
                 className={({ isActive }) =>
                   cn(
                     "rounded-control px-3 py-1.5 text-sm font-medium transition-colors",
@@ -54,30 +54,30 @@ export function AdminApp() {
                   )
                 }
               >
-                {l.rotulo}
+                {link.label}
               </NavLink>
             ))}
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
-            <Link to="/" className="hidden text-xs text-ink-faint hover:text-ink sm:block">
+            <Link to="/" className="hidden text-xs text-ink-muted hover:text-ink sm:block">
               Ver a loja
             </Link>
-            <span className="hidden max-w-[16ch] truncate text-xs text-ink-faint md:block">
+            <span className="hidden max-w-[16ch] truncate text-xs text-ink-muted md:block">
               {admin.email}
             </span>
-            <Botao variante="secundario" tamanho="sm" onClick={sair}>
+            <Button variant="secondary" size="sm" onClick={signOut}>
               Sair
-            </Botao>
+            </Button>
           </div>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         <Routes>
-          <Route index element={<PedidosAdmin />} />
-          <Route path="produtos" element={<ProdutosAdmin />} />
-          <Route path="config" element={<ConfigAdmin />} />
+          <Route index element={<AdminOrders />} />
+          <Route path="products" element={<AdminProducts />} />
+          <Route path="settings" element={<AdminSettings />} />
         </Routes>
       </main>
     </div>

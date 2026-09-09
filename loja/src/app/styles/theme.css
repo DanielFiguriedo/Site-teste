@@ -1,62 +1,62 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   Design system — Loja de servidor de Minecraft
-   Direção: dark gamer premium. Profundidade por superfície, não por borda.
-   O acento é escasso de propósito: se tudo brilha, nada chama a atenção.
+   Design system — Minecraft server store
+   Direction: premium dark gaming. Depth comes from surfaces, not borders.
+   The accent is scarce on purpose: if everything glows, nothing stands out.
    ========================================================================== */
 
 @theme {
-  /* --- Superfícies -------------------------------------------------------
-     Escala do fundo (0) até o elemento mais elevado (3). A hierarquia vem da
-     luminosidade; bordas são só o acabamento. */
+  /* --- Surfaces ----------------------------------------------------------
+     Scale from the page background (0) to the most elevated element (3).
+     Hierarchy comes from lightness; borders are only the finish. */
   --color-surface-0: oklch(0.16 0.014 260);
   --color-surface-1: oklch(0.20 0.016 260);
   --color-surface-2: oklch(0.245 0.018 260);
   --color-surface-3: oklch(0.29 0.020 260);
   --color-surface-inset: oklch(0.135 0.014 260);
 
-  /* --- Traços e bordas --------------------------------------------------- */
+  /* --- Strokes and borders ------------------------------------------------ */
   --color-line: oklch(1 0 0 / 8%);
   --color-line-strong: oklch(1 0 0 / 14%);
 
-  /* --- Texto -------------------------------------------------------------
-     Todos os tons abaixo passam de 4.5:1 sobre surface-0/1. */
+  /* --- Text ---------------------------------------------------------------
+     Every tone below clears 4.5:1 against surface-0/1. */
   --color-ink: oklch(0.97 0.004 260);
   --color-ink-muted: oklch(0.76 0.014 260);
   --color-ink-faint: oklch(0.62 0.016 260);
 
-  /* --- Acento (esmeralda) ------------------------------------------------
-     Reservado para: CTA de compra, preço, estado ativo. Nada mais. */
+  /* --- Accent (emerald) ---------------------------------------------------
+     Reserved for: the buy CTA, prices and the active state. Nothing else. */
   --color-accent: oklch(0.78 0.19 155);
   --color-accent-hover: oklch(0.83 0.19 155);
   --color-accent-dim: oklch(0.52 0.13 155);
   --color-accent-ink: oklch(0.19 0.05 155);
   --color-accent-glow: oklch(0.78 0.19 155 / 22%);
 
-  /* --- Semânticos --------------------------------------------------------- */
+  /* --- Semantic ------------------------------------------------------------ */
   --color-warn: oklch(0.80 0.16 78);
   --color-danger: oklch(0.68 0.20 22);
   --color-info: oklch(0.72 0.14 240);
 
-  /* --- Tipografia --------------------------------------------------------
-     Outfit (geométrica) nos títulos, Inter no texto corrido. */
+  /* --- Typography ---------------------------------------------------------
+     Outfit (geometric) for headings, Inter for body copy. */
   --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  /* --- Raio --------------------------------------------------------------- */
+  /* --- Radius --------------------------------------------------------------- */
   --radius-card: 1rem;
   --radius-control: 0.625rem;
 
-  /* --- Sombras -----------------------------------------------------------
-     Sombra em fundo escuro precisa ser preta e larga, não cinza e curta. */
+  /* --- Shadows -------------------------------------------------------------
+     A shadow on a dark ground has to be black and wide, not grey and tight. */
   --shadow-card: 0 1px 2px oklch(0 0 0 / 40%), 0 8px 24px -12px oklch(0 0 0 / 70%);
   --shadow-lift: 0 2px 4px oklch(0 0 0 / 40%), 0 18px 40px -16px oklch(0 0 0 / 80%);
-  /* Brilho do botão de compra — o único elemento que ganha halo do acento. */
+  /* Buy-button glow — the only element that gets an accent halo. */
   --shadow-cta: 0 6px 20px -8px var(--color-accent-glow);
-  --shadow-cta-forte: 0 10px 28px -8px var(--color-accent-glow);
+  --shadow-cta-strong: 0 10px 28px -8px var(--color-accent-glow);
 
-  /* --- Animações ---------------------------------------------------------- */
+  /* --- Motion ---------------------------------------------------------------- */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -88,13 +88,13 @@
     text-wrap: pretty;
   }
 
-  /* Preços não podem "dançar" quando o número muda. */
+  /* Prices must not jitter when the digits change. */
   .tabular {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
 
-  /* Foco visível e consistente em tudo que é interativo. */
+  /* Visible, consistent focus on everything interactive. */
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
@@ -106,7 +106,7 @@
     color: var(--color-ink);
   }
 
-  /* Scrollbar discreta, combinando com as superfícies. */
+  /* Discreet scrollbar, matching the surfaces. */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--color-surface-3) transparent;
@@ -122,14 +122,14 @@
 }
 
 @layer components {
-  /* Vidro fosco — usado no header e em painéis sobrepostos ao hero. */
+  /* Frosted glass — used by the header and panels layered over the hero. */
   .glass {
     background: color-mix(in oklab, var(--color-surface-1) 72%, transparent);
     backdrop-filter: blur(16px) saturate(140%);
     border: 1px solid var(--color-line);
   }
 
-  /* Brilho radial de fundo. Puramente decorativo. */
+  /* Radial background glow. Purely decorative. */
   .aurora {
     background-image:
       radial-gradient(60% 50% at 50% 0%, var(--color-accent-glow), transparent 70%),

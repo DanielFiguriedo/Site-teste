@@ -1,53 +1,58 @@
 import { useEffect, useRef } from "react";
 
-const FOCAVEIS =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
 
 /**
- * Comportamento de teclado de um modal: fecha no Escape, leva o foco para
- * dentro ao abrir, prende o Tab lá e devolve o foco a quem abriu.
+ * Modal keyboard behaviour: close on Escape, move focus inside on open, trap
+ * Tab there and hand focus back to whoever opened it.
  *
- * Sem prender o foco, o Tab escapa para o header atrás do modal e quem navega
- * por teclado fica preenchendo um formulário que não vê.
+ * Without the focus trap, Tab escapes to the header behind the modal and a
+ * keyboard user ends up filling in a form they cannot see.
  */
-export function useModal(aberto: boolean, aoFechar: () => void) {
-  const caixa = useRef<HTMLDivElement>(null);
+export function useModal(open: boolean, onClose: () => void) {
+  const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!aberto) return;
+    if (!open) return;
 
-    const anterior = document.activeElement as HTMLElement | null;
-    const primeiro = caixa.current?.querySelector<HTMLElement>(FOCAVEIS);
-    primeiro?.focus();
+    const previous = document.activeElement as HTMLElement | null;
+    box.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
 
-    const aoTeclar = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        aoFechar();
+        onClose();
         return;
       }
-      if (e.key !== "Tab" || !caixa.current) return;
+      if (e.key !== "Tab" || !box.current) return;
 
-      const focaveis = [...caixa.current.querySelectorAll<HTMLElement>(FOCAVEIS)];
-      if (focaveis.length === 0) return;
+      const focusable = [...box.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      if (focusable.length === 0) return;
 
-      const inicio = focaveis[0];
-      const fim = focaveis[focaveis.length - 1];
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
 
-      if (e.shiftKey && document.activeElement === inicio) {
+      if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
-        fim.focus();
-      } else if (!e.shiftKey && document.activeElement === fim) {
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
         e.preventDefault();
-        inicio.focus();
+        first.focus();
       }
     };
 
-    window.addEventListener("keydown", aoTeclar);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("keydown", aoTeclar);
-      anterior?.focus();
+      window.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
     };
-  }, [aberto, aoFechar]);
+  }, [open, onClose]);
 
-  return caixa;
+  return box;
 }

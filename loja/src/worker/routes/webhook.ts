@@ -1,112 +1,91 @@
 import { Hono } from "hono";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "../db/client";
-import { obterProvider } from "../payments";
-import { marcarComoPago } from "../lib/pedidos";
+import { getProvider } from "../payments";
+import { markAsPaid } from "../lib/orders";
+import { isUniqueViolation } from "../lib/sqlite-errors";
 import type { AppEnv } from "../env";
 
 export const webhook = new Hono<AppEnv>();
 
 /**
- * Violação de UNIQUE é evento repetido; qualquer outro erro é falha nossa.
+ * Payment confirmation from the gateway.
  *
- * A mensagem precisa ser procurada na cadeia de causas: o Drizzle embrulha o
- * erro do D1 num `DrizzleQueryError` cujo próprio `message` é apenas
- * "Failed query: insert into ..." — o texto do UNIQUE fica no `cause`.
- */
-export function ehEventoDuplicado(e: unknown): boolean {
-  for (let atual: unknown = e, salto = 0; atual && salto < 5; salto++) {
-    const texto = atual instanceof Error ? atual.message : String(atual);
-    if (/UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test(texto)) return true;
-    atual = atual instanceof Error ? atual.cause : undefined;
-  }
-  return false;
-}
-
-/**
- * Confirmação de pagamento vinda do gateway.
+ * The order of the steps below is the security of the whole system:
+ *   1. read the RAW body exactly once;
+ *   2. validate the signature against that raw body (first gate);
+ *   3. record the event idempotently (blocks a double credit);
+ *   4. re-query the charge on the gateway API (the real defence);
+ *   5. only then mark the order as paid.
  *
- * A ordem dos passos aqui é a segurança do sistema inteiro:
- *   1. ler o corpo CRU uma única vez;
- *   2. validar a assinatura contra esse corpo cru (primeiro portão);
- *   3. registrar o evento de forma idempotente (impede crédito duplicado);
- *   4. reconsultar a cobrança na API do gateway (defesa real);
- *   5. só então marcar o pedido como pago.
- *
- * Um 200 diz ao gateway "recebi, não reenvie". Por isso ele só sai quando o
- * evento realmente foi registrado: erro de infraestrutura devolve 500 de
- * propósito, para o gateway reenfileirar.
+ * A 200 tells the gateway "received, do not resend". So it is only returned
+ * once the event has actually been recorded: an infrastructure error returns
+ * 500 on purpose, so the gateway re-queues.
  */
 webhook.post("/webhook/pix", async (c) => {
-  // Passo 1 — uma leitura só. Reler o body lança "Body has already been used",
-  // e re-serializar o JSON invalidaria a assinatura.
-  const corpoCru = await c.req.text();
-  const cabecalhos = c.req.raw.headers;
+  // Step 1 — a single read. Re-reading throws "Body has already been used",
+  // and re-serialising the JSON would invalidate the signature.
+  const rawBody = await c.req.text();
+  const headers = c.req.raw.headers;
 
-  const provider = obterProvider(c.env);
+  const provider = getProvider(c.env);
 
-  // Passo 2.
-  if (!(await provider.verificarAssinaturaWebhook(corpoCru, cabecalhos))) {
-    console.warn("Webhook com assinatura inválida recusado.");
-    return c.json({ erro: "Assinatura inválida." }, 401);
+  // Step 2.
+  if (!(await provider.verifyWebhookSignature(rawBody, headers))) {
+    console.warn("Rejected webhook with invalid signature.");
+    return c.json({ error: "Assinatura inválida." }, 401);
   }
 
-  const evento = provider.extrairEvento(corpoCru, cabecalhos);
-  if (!evento) return c.json({ ok: true, ignorado: true });
+  const event = provider.parseEvent(rawBody, headers);
+  if (!event) return c.json({ ok: true, ignored: true });
 
-  // Passo 3 — a UNIQUE em (provider, evento_id) é o que impede o mesmo evento
-  // reenviado de creditar o pedido duas vezes.
+  // Step 3 — the UNIQUE on (provider, event_id) is what stops a resent event
+  // from crediting the order twice.
   try {
-    await db(c.env)
-      .insert(schema.webhookEventos)
-      .values({
-        provider: provider.nome,
-        eventoId: evento.eventoId,
-        tipo: evento.tipo,
-        payload: corpoCru.slice(0, 4000),
-      });
+    await db(c.env).insert(schema.webhookEvents).values({
+      provider: provider.name,
+      eventId: event.eventId,
+      type: event.type,
+      payload: rawBody.slice(0, 4000),
+    });
   } catch (e) {
-    if (ehEventoDuplicado(e)) return c.json({ ok: true, duplicado: true });
+    if (isUniqueViolation(e)) return c.json({ ok: true, duplicate: true });
 
-    // Um erro transitório do banco tratado como "duplicado" faria o gateway
-    // parar de reenviar um evento que nunca foi processado.
-    console.error("Falha ao registrar o evento de webhook:", e);
-    return c.json({ erro: "Falha temporária. Reenvie." }, 500);
+    // A transient database error treated as "duplicate" would make the gateway
+    // stop resending an event that was never processed.
+    console.error("Failed to record webhook event:", e);
+    return c.json({ error: "Falha temporária. Reenvie." }, 500);
   }
 
-  // Passos 4 e 5 rodam depois da resposta: o gateway recebe o 200 imediatamente
-  // e não reenfileira por lentidão nossa.
+  // Steps 4 and 5 run after the response: the gateway gets its 200 immediately
+  // and does not re-queue because of our latency.
   c.executionCtx.waitUntil(
     (async () => {
       try {
-        const situacao = await provider.consultarCobranca(evento.chargeId);
-        if (situacao.status === "pago") {
-          const resultado = await marcarComoPago(
-            c.env,
-            evento.chargeId,
-            situacao.valorPagoCentavos,
-          );
-          console.log(`Webhook ${evento.eventoId} -> ${resultado}`);
+        const state = await provider.getCharge(event.chargeId);
+        if (state.status === "paid") {
+          const outcome = await markAsPaid(c.env, event.chargeId, state.paidCents);
+          console.log(`Webhook ${event.eventId} -> ${outcome}`);
 
-          if (resultado === "desconhecido") {
-            // Dinheiro que entrou sem pedido correspondente. Não há o que
-            // creditar, mas some dos logs se não for dito em voz alta.
+          if (outcome === "unknown") {
+            // Money that arrived without a matching order. There is nothing to
+            // credit, but it would disappear from the logs if not said aloud.
             console.error(
-              `Pagamento confirmado para a cobrança ${evento.chargeId}, que não existe no banco.`,
+              `Payment confirmed for charge ${event.chargeId}, which does not exist in the database.`,
             );
           }
         }
       } catch (e) {
-        console.error(`Falha ao processar o webhook ${evento.eventoId}:`, e);
+        console.error(`Failed to process webhook ${event.eventId}:`, e);
 
-        // Apaga a marca de idempotência para que um reenvio do gateway possa
-        // tentar de novo. Sem isso, a única chance restante seria o cron.
+        // Drop the idempotency marker so a gateway resend can try again.
+        // Without this the cron would be the only remaining chance.
         await db(c.env)
-          .delete(schema.webhookEventos)
+          .delete(schema.webhookEvents)
           .where(
             and(
-              eq(schema.webhookEventos.provider, provider.nome),
-              eq(schema.webhookEventos.eventoId, evento.eventoId),
+              eq(schema.webhookEvents.provider, provider.name),
+              eq(schema.webhookEvents.eventId, event.eventId),
             ),
           )
           .catch(() => undefined);

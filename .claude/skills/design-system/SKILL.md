@@ -1,71 +1,100 @@
 ---
 name: design-system
-description: Tokens, componentes e regras visuais da loja. Use SEMPRE antes de criar ou alterar qualquer tela, componente ou estilo — inclusive para "só um ajuste rápido" de cor, espaçamento ou tipografia.
+description: Tokens, components and visual rules of the store. ALWAYS use before creating or changing any screen, component or style — including a "quick tweak" to a colour, spacing or type.
 ---
 
-# Design system da loja
+# Store design system
 
-Direção: **dark gamer premium, clean**. A profundidade vem da escala de
-superfícies, não de bordas em tudo. O acento é escasso de propósito.
+Direction: **premium dark gaming, clean**. Depth comes from the surface scale,
+not from putting a border on everything. The accent is scarce on purpose.
 
-Os tokens vivem em `loja/src/app/styles/theme.css`, dentro do bloco `@theme` do
-Tailwind v4. **Nunca escreva um valor de cor, raio ou sombra direto no
-componente** — se falta um token, adicione ao tema e use pelo nome.
+Tokens live in `loja/src/app/styles/theme.css`, inside Tailwind v4's `@theme`
+block. **Never write a colour, radius or shadow value directly in a component** —
+if a token is missing, add it to the theme and use it by name.
+
+Remember the language policy: identifiers, comments and class names are English;
+the strings a user reads are Portuguese.
 
 ## Tokens
 
-| Grupo | Tokens | Uso |
+| Group | Tokens | Use |
 |---|---|---|
-| Superfície | `surface-0` … `surface-3`, `surface-inset` | 0 = fundo da página; sobe conforme o elemento se eleva. `inset` é para poços (input, área de imagem). |
-| Traço | `line`, `line-strong` | `line` no repouso, `line-strong` no hover. |
-| Texto | `ink`, `ink-muted`, `ink-faint` | Título / corpo / rótulo secundário. |
-| Acento | `accent`, `accent-hover`, `accent-dim`, `accent-ink`, `accent-glow` | `accent-ink` é a cor do texto **sobre** o acento. |
-| Semântico | `warn`, `danger`, `info` | Estado, nunca decoração. |
-| Fonte | `font-display`, `font-sans` | Outfit nos títulos, Inter no texto. |
-| Raio | `radius-card`, `radius-control` | Card e controle. |
-| Sombra | `shadow-card`, `shadow-lift` | Repouso e hover. |
+| Surface | `surface-0` … `surface-3`, `surface-inset` | 0 is the page ground; it climbs as an element rises. `inset` is for wells (inputs, image areas). |
+| Stroke | `line`, `line-strong` | `line` at rest, `line-strong` on hover. |
+| Text | `ink`, `ink-muted`, `ink-faint` | Heading / body / secondary label. |
+| Accent | `accent`, `accent-hover`, `accent-dim`, `accent-ink`, `accent-glow` | `accent-ink` is the text colour **on top of** the accent. |
+| Semantic | `warn`, `danger`, `info` | State, never decoration. |
+| Font | `font-display`, `font-sans` | Outfit for headings, Inter for body. |
+| Radius | `radius-card`, `radius-control` | Card and control. |
+| Shadow | `shadow-card`, `shadow-lift`, `shadow-cta`, `shadow-cta-strong` | Rest, hover, and the buy button's glow. |
 
-## Regras
+## Rules
 
-**O acento é escasso.** Só três coisas podem usar esmeralda cheia: o CTA de
-compra, o preço e o estado ativo (aba/filtro selecionado). Se tudo brilha, o
-botão de comprar deixa de chamar atenção — e é ele que converte.
+**The accent is scarce.** Only three things may use full emerald: the buy CTA,
+the price, and the active state (selected tab or filter). If everything glows,
+the button that converts stops standing out.
 
-**Contraste mínimo AA.** Texto sobre `surface-0`/`surface-1` usa `ink` ou
-`ink-muted`. `ink-faint` só para rótulo curto e não essencial, nunca para texto
-que o usuário precise ler para decidir a compra.
+**Minimum AA contrast.** Text over `surface-0`/`surface-1` uses `ink` or
+`ink-muted`. `ink-faint` is for a short, non-essential label only — never for
+text the user must read to decide on a purchase.
 
-**Preço usa `.tabular`.** Sem `font-variant-numeric: tabular-nums` a coluna de
-preços dança quando o número muda de largura.
+**Prices use `.tabular`.** Without `font-variant-numeric: tabular-nums` a column
+of prices jitters as digit widths change.
 
-**Hover é elevação, não troca de cor.** Card: `-translate-y-1` +
-`shadow-lift` + `line-strong`. Duração 200–300ms com `--ease-out-soft`.
+**Hover is elevation, not a colour swap.** Card: `-translate-y-1` +
+`shadow-lift` + `line-strong`, 200–300ms with `--ease-out-soft`.
 
-**Estado de foco nunca é removido.** O `:focus-visible` global já resolve; não
-sobrescreva com `outline-none` sem repor algo visível.
+**Focus state is never removed.** The global `:focus-visible` handles it; do not
+override with `outline-none` without putting something visible back. Note the
+pay-what-you-want field, where the ring lives on the wrapper via
+`focus-within:border-accent`.
 
-**Toda animação respeita `prefers-reduced-motion`** — já tratado globalmente no
-`@layer base`; não crie animação em JS que ignore isso.
+**Every animation respects `prefers-reduced-motion`** — already handled globally
+in `@layer base`; do not add JS animation that ignores it.
 
-## Componentes canônicos
+## Canonical components
 
-Reutilize, não recrie:
+Reuse, do not recreate:
 
-- `components/Botao.tsx` — `Botao` e `BotaoLink`, variantes
-  `primario` | `secundario` | `fantasma`, tamanhos `sm` | `md` | `lg`.
-- `components/Selo.tsx` — etiquetas curtas, tons `accent` | `neutro` | `warn` | `danger`.
-- `components/ProdutoCard.tsx` — card de produto e o esqueleto de carregamento.
-- `components/Icones.tsx` — SVG inline. Um punhado de ícones não justifica uma
-  biblioteca; adicione o novo ícone aqui, no mesmo estilo (traço 1.6, 24×24).
-- `lib/cn.ts` — junção de classes.
+- `components/Button.tsx` — `Button` and `ButtonLink`, variants
+  `primary` | `secondary` | `ghost` | `danger`, sizes `sm` | `md` | `lg`.
+  Irreversible actions use `danger` plus a confirmation step.
+- `components/Badge.tsx` — short labels, tones from `StatusTone`.
+- `components/Chip.tsx` — `ChipLink` and `ChipButton` for filters.
+- `components/ProductCard.tsx` — product card and its loading skeleton.
+- `components/PlayerAvatar.tsx` — the player head, with a fallback when the
+  third-party service fails.
+- `components/Icons.tsx` — inline SVG. A handful of icons does not justify a
+  library; add the new one here, same style (1.6 stroke, 24×24, `aria-hidden`).
+- `components/Markdown.tsx` — safe renderer; takes a `level` so headings never
+  skip from `h1` to `h3`.
+- `lib/modal.ts` — `useModal`: Escape, initial focus, focus trap, focus restore.
+  Every dialog uses it.
+- `lib/cn.ts` — class joining.
 
-## Carregamento e vazio
+Status labels come from `ORDER_STATUS_LABELS` in `@shared/types`. Never render a
+database key such as `awaiting_payment` to the user.
 
-Toda lista tem **esqueleto com a mesma silhueta** do conteúdo real (o layout não
-pode "pular") e **estado vazio com frase em português**, nunca uma área em branco.
+## Loading, empty and error
 
-## Responsivo
+Every list needs three states: a **skeleton with the same silhouette** as the
+real content (the layout must not jump), an **empty state with a sentence in
+Portuguese**, and an **error state** — a `fetch` inside a component always needs
+`try/catch/finally`, or a network failure leaves the screen on the skeleton
+forever.
 
-Mobile-first: a maioria dos jogadores compra pelo celular, com o app do banco no
-mesmo aparelho. Grid de produtos: 1 coluna → `sm:` 2 → `lg:` 4. Em telas de
-compra, o CTA principal fica acessível sem rolagem.
+## Accessibility
+
+- `aria-label` on any icon-only button, `aria-hidden` on decorative SVG.
+- Invalid fields get `aria-invalid` plus `aria-describedby` pointing at a
+  message: colour alone is not an indicator.
+- Errors that matter announce themselves with `role="alert"`; a screen that
+  changes on its own (the payment one) wraps the swap in `role="status"`.
+- Toggle groups use `aria-pressed`; the active filter uses `aria-current`.
+
+## Responsive
+
+Mobile first: most players buy on a phone, with the banking app on the same
+device. Product grid: 1 column → `sm:` 2 → `lg:` 4. On buying screens the main
+CTA has to be reachable without scrolling — on the product page the purchase
+panel is `order-first` below `lg` for exactly that reason.

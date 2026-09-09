@@ -2,160 +2,156 @@ import { eq } from "drizzle-orm";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { Context, Next } from "hono";
 import { db, schema } from "../db/client";
-import { naoAutorizado } from "./erros";
-import { comparaSegura } from "../payments/provider";
+import { unauthorized } from "./errors";
+import { timingSafeEqual } from "../payments/provider";
 import type { AppEnv, Env } from "../env";
 
-const COOKIE = "loja_admin";
-/** Duração da sessão. Curta o bastante para um notebook esquecido não virar risco. */
-const DURACAO_SEGUNDOS = 60 * 60 * 12;
-const ITERACOES = 100_000;
+const COOKIE = "store_admin";
+/** Session lifetime. Short enough that a forgotten laptop is not a liability. */
+const DURATION_SECONDS = 60 * 60 * 12;
+const ITERATIONS = 100_000;
 
 const b64 = {
-  codificar: (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)),
-  decodificar: (texto: string) => Uint8Array.from(atob(texto), (c) => c.charCodeAt(0)),
+  encode: (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)),
+  decode: (text: string) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0)),
 };
 
 /**
- * Hash de senha com PBKDF2-SHA256 via WebCrypto — `node:crypto` não existe no
- * runtime do Workers. Formato: `pbkdf2$<iteracoes>$<salt>$<hash>`, ambos base64.
+ * Password hashing with PBKDF2-SHA256 through WebCrypto — `node:crypto` does
+ * not exist in the Workers runtime. Format: `pbkdf2$<iterations>$<salt>$<hash>`,
+ * both base64.
  */
-export async function gerarHashSenha(senha: string, saltBruto?: Uint8Array): Promise<string> {
-  const salt = saltBruto ?? crypto.getRandomValues(new Uint8Array(16));
-  const chave = await crypto.subtle.importKey(
+export async function hashPassword(password: string, rawSalt?: Uint8Array): Promise<string> {
+  const salt = rawSalt ?? crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(senha),
+    new TextEncoder().encode(password),
     "PBKDF2",
     false,
     ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: ITERACOES, hash: "SHA-256" },
-    chave,
+    { name: "PBKDF2", salt, iterations: ITERATIONS, hash: "SHA-256" },
+    key,
     256,
   );
-  return `pbkdf2$${ITERACOES}$${b64.codificar(salt)}$${b64.codificar(new Uint8Array(bits))}`;
+  return `pbkdf2$${ITERATIONS}$${b64.encode(salt)}$${b64.encode(new Uint8Array(bits))}`;
 }
 
-export async function conferirSenha(senha: string, armazenado: string): Promise<boolean> {
-  const [algoritmo, iteracoes, salt, hash] = armazenado.split("$");
-  if (algoritmo !== "pbkdf2" || !salt || !hash) return false;
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const [algorithm, iterations, salt, hash] = stored.split("$");
+  if (algorithm !== "pbkdf2" || !salt || !hash) return false;
 
-  const chave = await crypto.subtle.importKey(
+  const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(senha),
+    new TextEncoder().encode(password),
     "PBKDF2",
     false,
     ["deriveBits"],
   );
   const bits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: b64.decodificar(salt),
-      iterations: Number(iteracoes),
-      hash: "SHA-256",
-    },
-    chave,
+    { name: "PBKDF2", salt: b64.decode(salt), iterations: Number(iterations), hash: "SHA-256" },
+    key,
     256,
   );
-  return comparaSegura(b64.codificar(new Uint8Array(bits)), hash);
+  return timingSafeEqual(b64.encode(new Uint8Array(bits)), hash);
 }
 
-/** Assina `<payload>.<hmac>`, no formato do cookie de sessão. */
-async function assinar(env: Env, payload: string): Promise<string> {
-  const chave = await crypto.subtle.importKey(
+/** Signs `<payload>.<hmac>`, the session cookie format. */
+async function sign(env: Env, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(env.SESSION_SECRET),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const assinatura = await crypto.subtle.sign("HMAC", chave, new TextEncoder().encode(payload));
-  return `${payload}.${b64.codificar(new Uint8Array(assinatura))}`;
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return `${payload}.${b64.encode(new Uint8Array(signature))}`;
 }
 
-interface Sessao {
+interface Session {
   sid: string;
   id: number;
   email: string;
   exp: number;
 }
 
-export async function criarSessao(c: Context<AppEnv>, usuario: { id: number; email: string }) {
-  const sessao: Sessao = {
+export async function createSession(c: Context<AppEnv>, user: { id: number; email: string }) {
+  const session: Session = {
     sid: crypto.randomUUID(),
-    id: usuario.id,
-    email: usuario.email,
-    exp: Math.floor(Date.now() / 1000) + DURACAO_SEGUNDOS,
+    id: user.id,
+    email: user.email,
+    exp: Math.floor(Date.now() / 1000) + DURATION_SECONDS,
   };
 
-  const payload = b64.codificar(new TextEncoder().encode(JSON.stringify(sessao)));
-  const token = await assinar(c.env, payload);
+  const payload = b64.encode(new TextEncoder().encode(JSON.stringify(session)));
+  const token = await sign(c.env, payload);
 
-  // O KV guarda apenas as sessões VÁLIDAS. Assim, "sair" revoga de verdade, em
-  // vez de só apagar o cookie do navegador de quem saiu.
-  await c.env.SESSIONS.put(`sessao:${sessao.sid}`, String(usuario.id), {
-    expirationTtl: DURACAO_SEGUNDOS,
+  // KV holds only the VALID sessions. That is what makes "sign out" actually
+  // revoke access instead of merely clearing the cookie on one browser.
+  await c.env.SESSIONS.put(`session:${session.sid}`, String(user.id), {
+    expirationTtl: DURATION_SECONDS,
   });
 
   setCookie(c, COOKIE, token, {
     httpOnly: true,
-    secure: c.env.AMBIENTE === "producao",
+    secure: c.env.ENVIRONMENT === "production",
     sameSite: "Strict",
     path: "/",
-    maxAge: DURACAO_SEGUNDOS,
+    maxAge: DURATION_SECONDS,
   });
 }
 
-export async function encerrarSessao(c: Context<AppEnv>) {
+export async function destroySession(c: Context<AppEnv>) {
   const token = getCookie(c, COOKIE);
   if (token) {
-    const sessao = await validarToken(c.env, token);
-    if (sessao) await c.env.SESSIONS.delete(`sessao:${sessao.sid}`);
+    const session = await verifyToken(c.env, token);
+    if (session) await c.env.SESSIONS.delete(`session:${session.sid}`);
   }
   deleteCookie(c, COOKIE, { path: "/" });
 }
 
-async function validarToken(env: Env, token: string): Promise<Sessao | null> {
-  const separador = token.lastIndexOf(".");
-  if (separador < 0) return null;
+async function verifyToken(env: Env, token: string): Promise<Session | null> {
+  const separator = token.lastIndexOf(".");
+  if (separator < 0) return null;
 
-  const payload = token.slice(0, separador);
-  if (!comparaSegura(await assinar(env, payload), token)) return null;
+  const payload = token.slice(0, separator);
+  if (!timingSafeEqual(await sign(env, payload), token)) return null;
 
   try {
-    const sessao = JSON.parse(new TextDecoder().decode(b64.decodificar(payload))) as Sessao;
-    if (sessao.exp < Math.floor(Date.now() / 1000)) return null;
-    return sessao;
+    const session = JSON.parse(new TextDecoder().decode(b64.decode(payload))) as Session;
+    if (session.exp < Math.floor(Date.now() / 1000)) return null;
+    return session;
   } catch {
     return null;
   }
 }
 
-/** Middleware das rotas `/api/admin/*`. */
-export async function exigirAdmin(c: Context<AppEnv>, next: Next) {
+/** Middleware for the `/api/admin/*` routes. */
+export async function requireAdmin(c: Context<AppEnv>, next: Next) {
   const token = getCookie(c, COOKIE);
-  if (!token) throw naoAutorizado("Faça login para continuar.");
+  if (!token) throw unauthorized("Faça login para continuar.");
 
-  const sessao = await validarToken(c.env, token);
-  if (!sessao) throw naoAutorizado("Sessão inválida ou expirada.");
+  const session = await verifyToken(c.env, token);
+  if (!session) throw unauthorized("Sessão inválida ou expirada.");
 
-  // A assinatura prova que o cookie não foi forjado; o KV prova que a sessão
-  // ainda não foi revogada.
-  if (!(await c.env.SESSIONS.get(`sessao:${sessao.sid}`))) {
-    throw naoAutorizado("Sessão encerrada. Faça login de novo.");
+  // The signature proves the cookie was not forged; KV proves the session has
+  // not been revoked since.
+  if (!(await c.env.SESSIONS.get(`session:${session.sid}`))) {
+    throw unauthorized("Sessão encerrada. Faça login de novo.");
   }
 
-  c.set("adminId", sessao.id);
-  c.set("adminEmail", sessao.email);
+  c.set("adminId", session.id);
+  c.set("adminEmail", session.email);
   await next();
 }
 
-export async function buscarAdminPorEmail(env: Env, email: string) {
-  const [usuario] = await db(env)
+export async function findAdminByEmail(env: Env, email: string) {
+  const [user] = await db(env)
     .select()
-    .from(schema.adminUsuarios)
-    .where(eq(schema.adminUsuarios.email, email.toLowerCase().trim()))
+    .from(schema.adminUsers)
+    .where(eq(schema.adminUsers.email, email.toLowerCase().trim()))
     .limit(1);
-  return usuario;
+  return user;
 }

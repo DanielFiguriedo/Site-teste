@@ -3,43 +3,43 @@ import type { PaymentProvider } from "./provider";
 import { MercadoPagoProvider } from "./mercadopago";
 import { MockProvider } from "./mock";
 
-function construir(env: Env, nome: string): PaymentProvider {
-  if (nome === "mock") {
-    // Subir com o simulado em produção faria a loja aceitar "pagamentos" que
-    // nunca existiram, então isto é recusado mesmo que a configuração peça.
-    if (env.AMBIENTE === "producao") {
-      throw new Error("O provedor simulado não pode ser usado em produção.");
+function build(env: Env, name: string): PaymentProvider {
+  if (name === "mock") {
+    // Shipping with the simulated provider by mistake would make the store
+    // accept "payments" that never happened, so this is refused outright.
+    if (env.ENVIRONMENT === "production") {
+      throw new Error("The simulated provider cannot be used in production.");
     }
     return new MockProvider(env.SESSIONS, env.SESSION_SECRET);
   }
 
-  if (nome === "mercadopago") {
+  if (name === "mercadopago") {
     if (!env.MERCADOPAGO_ACCESS_TOKEN || !env.MERCADOPAGO_WEBHOOK_SECRET) {
       throw new Error(
-        "Faltam os segredos do Mercado Pago (MERCADOPAGO_ACCESS_TOKEN e MERCADOPAGO_WEBHOOK_SECRET).",
+        "Missing Mercado Pago secrets (MERCADOPAGO_ACCESS_TOKEN and MERCADOPAGO_WEBHOOK_SECRET).",
       );
     }
     return new MercadoPagoProvider(env.MERCADOPAGO_ACCESS_TOKEN, env.MERCADOPAGO_WEBHOOK_SECRET);
   }
 
-  throw new Error(`Provedor de pagamento desconhecido: "${nome}".`);
+  throw new Error(`Unknown payment provider: "${name}".`);
 }
 
-/** Provedor configurado para novas cobranças. */
-export function obterProvider(env: Env): PaymentProvider {
-  return construir(env, env.PAGAMENTO_PROVIDER);
+/** Provider configured for new charges. */
+export function getProvider(env: Env): PaymentProvider {
+  return build(env, env.PAYMENT_PROVIDER);
 }
 
 /**
- * Provedor de um pedido já existente, pelo nome gravado nele.
+ * Provider of an existing order, by the name stored on it.
  *
- * Necessário porque a configuração muda com o tempo: ao trocar de `mock` para
- * `mercadopago` no deploy (ou de gateway, mais adiante), os pedidos pendentes
- * continuam com cobranças do provedor antigo. Consultá-las com o provedor novo
- * daria 404 e o pedido nunca seria reconciliado.
+ * Needed because configuration changes over time: switching from `mock` to
+ * `mercadopago` on deploy (or swapping gateways later) leaves pending orders
+ * holding charges that only exist at the previous provider. Querying those with
+ * the new provider would 404 and the order would never reconcile.
  */
-export function obterProviderPorNome(env: Env, nome: string): PaymentProvider {
-  return construir(env, nome);
+export function getProviderByName(env: Env, name: string): PaymentProvider {
+  return build(env, name);
 }
 
 export type { PaymentProvider };

@@ -1,21 +1,22 @@
--- Dados de exemplo para desenvolvimento.
--- Preços em CENTAVOS. Nomes seguem a convenção BR: CAIXA ALTA com o
--- modificador entre colchetes (VIP OURO [30 DIAS], CHAVE MÍSTICA [x5]).
+-- Sample data for development.
+-- Prices are in CENTS. Product names follow the Brazilian convention: uppercase
+-- with the modifier in brackets (VIP OURO [30 DIAS], CHAVE MÍSTICA [x5]).
+-- The content itself stays in Portuguese: it is what the player reads.
 
-DELETE FROM pedido_itens;
-DELETE FROM pedidos;
-DELETE FROM produtos;
-DELETE FROM categorias;
-DELETE FROM config;
+DELETE FROM order_items;
+DELETE FROM orders;
+DELETE FROM products;
+DELETE FROM categories;
+DELETE FROM settings;
 
-INSERT INTO categorias (id, slug, nome, descricao, icone, ordem, ativo) VALUES
+INSERT INTO categories (id, slug, name, description, icon, position, active) VALUES
   (1, 'vip',    'VIP',          'Cargos com vantagens exclusivas no servidor.', 'crown',   1, 1),
   (2, 'cash',   'Cash',         'Moeda do servidor para usar na loja do jogo.', 'coins',   2, 1),
   (3, 'kits',   'Kits e Itens', 'Equipamentos, kits e itens especiais.',        'package', 3, 1),
   (4, 'chaves', 'Chaves',       'Chaves para abrir as caixas misteriosas.',     'key',     4, 1);
 
-INSERT INTO produtos
-  (categoria_id, slug, nome, descricao_curta, descricao_md, preco_centavos, preco_de_centavos, duracao_dias, presenteavel, preco_livre, destaque, estoque, ordem, ativo)
+INSERT INTO products
+  (category_id, slug, name, short_description, description_md, price_cents, original_price_cents, duration_days, giftable, pay_what_you_want, featured, stock, position, active)
 VALUES
   (1, 'vip-bronze-30', 'VIP BRONZE [30 DIAS]',
    'O primeiro passo. Kit diário e comandos extras.',
@@ -123,10 +124,9 @@ Quem apoia ganha a tag **APOIADOR** no chat.',
 - Prêmios exclusivos, incluindo cosméticos e pets',
    2990, 3990, NULL, 1, 0, 1, NULL, 2, 1);
 
-INSERT INTO config (chave, valor) VALUES
-  ('nome_servidor',   'MeuServidor'),
-  ('ip_servidor',     'jogar.meuservidor.com.br'),
-  ('discord_convite', ''),
-  ('prazo_entrega',   'em até 24 horas'),
-  ('aviso_entrega',   'A entrega é feita manualmente pela nossa equipe. Assim que o Pix for confirmado, seu pedido entra na fila e você recebe os itens no jogo.'),
-  ('cor_destaque',    'esmeralda');
+INSERT INTO settings (key, value) VALUES
+  ('server_name',     'MeuServidor'),
+  ('server_ip',       'jogar.meuservidor.com.br'),
+  ('discord_invite',  ''),
+  ('delivery_time',   'em até 24 horas'),
+  ('delivery_notice', 'A entrega é feita manualmente pela nossa equipe. Assim que o Pix for confirmado, seu pedido entra na fila e você recebe os itens no jogo.');

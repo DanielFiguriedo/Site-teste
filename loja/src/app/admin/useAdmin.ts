@@ -7,34 +7,34 @@ export interface Admin {
 }
 
 /**
- * Sessão do painel.
+ * Admin panel session.
  *
- * A sessão real é um cookie `HttpOnly` — o JavaScript não a lê nem poderia.
- * Este hook só pergunta ao servidor "ainda estou logado?" para decidir entre
- * mostrar o painel ou a tela de login.
+ * The real session is an `HttpOnly` cookie — JavaScript neither reads it nor
+ * could. This hook only asks the server "am I still signed in?" so the app can
+ * decide between the panel and the login screen.
  */
 export function useAdmin() {
   const [admin, setAdmin] = useState<Admin | null>(null);
-  const [verificando, setVerificando] = useState(true);
+  const [checking, setChecking] = useState(true);
 
-  const verificar = useCallback(async () => {
+  const check = useCallback(async () => {
     try {
-      setAdmin(await api<Admin>("/admin/eu"));
+      setAdmin(await api<Admin>("/admin/me"));
     } catch {
       setAdmin(null);
     } finally {
-      setVerificando(false);
+      setChecking(false);
     }
   }, []);
 
   useEffect(() => {
-    void verificar();
-  }, [verificar]);
+    void check();
+  }, [check]);
 
-  const sair = useCallback(async () => {
+  const signOut = useCallback(async () => {
     await api("/admin/logout", { method: "POST" }).catch(() => undefined);
     setAdmin(null);
   }, []);
 
-  return { admin, verificando, verificar, sair };
+  return { admin, checking, check, signOut };
 }

@@ -1,39 +1,39 @@
 import {
-  comparaSegura,
+  timingSafeEqual,
   hmacSha256Hex,
-  type CobrancaPix,
-  type DadosCobranca,
-  type EventoWebhook,
+  type ChargeInput,
+  type ChargeState,
+  type ChargeStatus,
   type PaymentProvider,
-  type SituacaoCobranca,
-  type StatusCobranca,
+  type PixCharge,
+  type WebhookEvent,
 } from "./provider";
-import { centavosParaReais } from "@shared/dinheiro";
+import { centsToReais } from "@shared/money";
 
 const BASE = "https://api.mercadopago.com";
 
-/** Diferença máxima aceita entre o `ts` da assinatura e o relógio atual. */
-const TOLERANCIA_SEGUNDOS = 300;
+/** Maximum accepted skew between the signature `ts` and the current clock. */
+const TOLERANCE_SECONDS = 300;
 
-/** Vocabulário do Mercado Pago traduzido para o status normalizado da loja. */
-function traduzirStatus(status: string): StatusCobranca {
+/** Mercado Pago's vocabulary translated to the store's normalised status. */
+function translateStatus(status: string): ChargeStatus {
   switch (status) {
     case "approved":
-      return "pago";
+      return "paid";
     case "refunded":
     case "charged_back":
-      return "reembolsado";
+      return "refunded";
     case "cancelled":
-      return "expirado";
+      return "expired";
     case "rejected":
-      return "cancelado";
+      return "cancelled";
     default:
-      // pending, in_process, authorized: ainda não é dinheiro na conta.
-      return "pendente";
+      // pending, in_process, authorized: not money in the account yet.
+      return "pending";
   }
 }
 
-interface RespostaPagamento {
+interface PaymentResponse {
   id: number;
   status: string;
   transaction_amount?: number;
@@ -45,15 +45,15 @@ interface RespostaPagamento {
 }
 
 export class MercadoPagoProvider implements PaymentProvider {
-  readonly nome = "mercadopago";
+  readonly name = "mercadopago";
 
   constructor(
     private readonly accessToken: string,
-    private readonly segredoWebhook: string,
+    private readonly webhookSecret: string,
   ) {}
 
-  private async chamar<T>(caminho: string, init?: RequestInit): Promise<T> {
-    const resposta = await fetch(`${BASE}${caminho}`, {
+  private async call<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await fetch(`${BASE}${path}`, {
       ...init,
       headers: {
         authorization: `Bearer ${this.accessToken}`,
@@ -62,121 +62,122 @@ export class MercadoPagoProvider implements PaymentProvider {
       },
     });
 
-    if (!resposta.ok) {
-      const corpo = await resposta.text().catch(() => "");
-      // O corpo do erro do gateway pode conter dados do pagador; registre só o
-      // suficiente para depurar.
-      throw new Error(`Mercado Pago respondeu ${resposta.status}: ${corpo.slice(0, 300)}`);
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      // The gateway's error body can carry payer data; log only enough to debug.
+      throw new Error(`Mercado Pago responded ${response.status}: ${body.slice(0, 300)}`);
     }
-    return resposta.json() as Promise<T>;
+    return response.json() as Promise<T>;
   }
 
-  async criarCobrancaPix(dados: DadosCobranca): Promise<CobrancaPix> {
-    const expiraEm = new Date(Date.now() + dados.minutosValidade * 60_000);
+  async createPixCharge(input: ChargeInput): Promise<PixCharge> {
+    const expiresAt = new Date(Date.now() + input.validityMinutes * 60_000);
 
-    const pagamento = await this.chamar<RespostaPagamento>("/v1/payments", {
+    const payment = await this.call<PaymentResponse>("/v1/payments", {
       method: "POST",
       headers: {
-        // Impede cobrança duplicada se a requisição for repetida por timeout.
-        "X-Idempotency-Key": dados.referencia,
+        // Prevents a duplicate charge if the request is retried after a timeout.
+        "X-Idempotency-Key": input.reference,
       },
       body: JSON.stringify({
-        transaction_amount: centavosParaReais(dados.totalCentavos),
-        description: dados.descricao,
+        transaction_amount: centsToReais(input.totalCents),
+        description: input.description,
         payment_method_id: "pix",
-        external_reference: dados.referencia,
-        notification_url: dados.urlWebhook,
-        date_of_expiration: expiraEm.toISOString(),
-        payer: { email: dados.emailPagador },
+        external_reference: input.reference,
+        notification_url: input.webhookUrl,
+        date_of_expiration: expiresAt.toISOString(),
+        payer: { email: input.payerEmail },
       }),
     });
 
-    const pix = pagamento.point_of_interaction?.transaction_data;
+    const pix = payment.point_of_interaction?.transaction_data;
     if (!pix?.qr_code) {
-      throw new Error("Mercado Pago não retornou o código Pix da cobrança.");
+      throw new Error("Mercado Pago did not return the Pix code for the charge.");
     }
 
     return {
-      chargeId: String(pagamento.id),
-      copiaCola: pix.qr_code,
+      chargeId: String(payment.id),
+      brCode: pix.qr_code,
       qrBase64: pix.qr_code_base64 ?? null,
-      expiraEm: pagamento.date_of_expiration ? new Date(pagamento.date_of_expiration) : expiraEm,
+      expiresAt: payment.date_of_expiration ? new Date(payment.date_of_expiration) : expiresAt,
     };
   }
 
-  async consultarCobranca(chargeId: string): Promise<SituacaoCobranca> {
-    const pagamento = await this.chamar<RespostaPagamento>(`/v1/payments/${chargeId}`);
-    const status = traduzirStatus(pagamento.status);
-    const pago =
-      pagamento.transaction_details?.total_paid_amount ?? pagamento.transaction_amount ?? null;
+  async getCharge(chargeId: string): Promise<ChargeState> {
+    const payment = await this.call<PaymentResponse>(`/v1/payments/${chargeId}`);
+    const status = translateStatus(payment.status);
+    const paid = payment.transaction_details?.total_paid_amount ?? payment.transaction_amount ?? null;
 
     return {
       status,
-      valorPagoCentavos: status === "pago" && pago !== null ? Math.round(pago * 100) : null,
+      paidCents: status === "paid" && paid !== null ? Math.round(paid * 100) : null,
     };
   }
 
   /**
-   * Assinatura do Mercado Pago.
+   * Mercado Pago signature.
    *
-   * Cabeçalho `x-signature: ts=<epoch>,v1=<hex>`. O manifesto é
-   * `id:<data.id minúsculo>;request-id:<x-request-id>;ts:<ts>;`, com as partes
-   * ausentes omitidas junto com o seu `;`. O segredo é o do painel de webhooks,
-   * que NÃO é o access token.
+   * Header `x-signature: ts=<epoch>,v1=<hex>`. The manifest is
+   * `id:<lowercase data.id>;request-id:<x-request-id>;ts:<ts>;`, with missing
+   * parts omitted along with their `;`. The secret is the one from the webhooks
+   * panel, which is NOT the access token.
    */
-  async verificarAssinaturaWebhook(corpoCru: string, cabecalhos: Headers): Promise<boolean> {
-    const assinatura = cabecalhos.get("x-signature");
-    if (!assinatura || !this.segredoWebhook) return false;
+  async verifyWebhookSignature(rawBody: string, headers: Headers): Promise<boolean> {
+    const signature = headers.get("x-signature");
+    if (!signature || !this.webhookSecret) return false;
 
-    const partes = new Map(
-      assinatura.split(",").map((p) => {
-        const [chave, ...resto] = p.split("=");
-        return [chave.trim(), resto.join("=").trim()];
+    const parts = new Map(
+      signature.split(",").map((part) => {
+        const [key, ...rest] = part.split("=");
+        return [key.trim(), rest.join("=").trim()];
       }),
     );
-    const ts = partes.get("ts");
-    const v1 = partes.get("v1");
+    const ts = parts.get("ts");
+    const v1 = parts.get("v1");
     if (!ts || !v1) return false;
 
-    // Uma requisição capturada não pode valer para sempre. A idempotência já
-    // impede crédito duplicado, mas fechar a janela custa três linhas.
-    const idade = Math.abs(Date.now() / 1000 - Number(ts));
-    if (!Number.isFinite(idade) || idade > TOLERANCIA_SEGUNDOS) return false;
+    // A captured request must not be valid forever. Idempotency already blocks
+    // a double credit, but closing the window costs three lines.
+    const age = Math.abs(Date.now() / 1000 - Number(ts));
+    if (!Number.isFinite(age) || age > TOLERANCE_SECONDS) return false;
 
     let dataId: string | undefined;
     try {
-      const corpo = JSON.parse(corpoCru) as { data?: { id?: string | number } };
-      if (corpo.data?.id != null) dataId = String(corpo.data.id).toLowerCase();
+      const body = JSON.parse(rawBody) as { data?: { id?: string | number } };
+      if (body.data?.id != null) dataId = String(body.data.id).toLowerCase();
     } catch {
       return false;
     }
 
-    const requestId = cabecalhos.get("x-request-id");
-    const manifesto =
-      (dataId ? `id:${dataId};` : "") +
-      (requestId ? `request-id:${requestId};` : "") +
-      `ts:${ts};`;
+    const requestId = headers.get("x-request-id");
+    const manifest =
+      (dataId ? `id:${dataId};` : "") + (requestId ? `request-id:${requestId};` : "") + `ts:${ts};`;
 
-    return comparaSegura(await hmacSha256Hex(this.segredoWebhook, manifesto), v1);
+    return timingSafeEqual(await hmacSha256Hex(this.webhookSecret, manifest), v1);
   }
 
-  extrairEvento(corpoCru: string, cabecalhos: Headers): EventoWebhook | null {
-    let corpo: { id?: string | number; type?: string; action?: string; data?: { id?: string | number } };
+  parseEvent(rawBody: string, headers: Headers): WebhookEvent | null {
+    let body: {
+      id?: string | number;
+      type?: string;
+      action?: string;
+      data?: { id?: string | number };
+    };
     try {
-      corpo = JSON.parse(corpoCru);
+      body = JSON.parse(rawBody);
     } catch {
       return null;
     }
 
-    const chargeId = corpo.data?.id;
-    if (corpo.type !== "payment" || chargeId == null) return null;
+    const chargeId = body.data?.id;
+    if (body.type !== "payment" || chargeId == null) return null;
 
     return {
-      // `id` é o id do evento; o `x-request-id` serve de reserva porque um
-      // reenvio do mesmo evento repete ambos.
-      eventoId: String(corpo.id ?? cabecalhos.get("x-request-id") ?? `${chargeId}-${corpo.action}`),
+      // `id` is the event id; `x-request-id` is the fallback because a resend
+      // of the same event repeats both.
+      eventId: String(body.id ?? headers.get("x-request-id") ?? `${chargeId}-${body.action}`),
       chargeId: String(chargeId),
-      tipo: corpo.action ?? corpo.type,
+      type: body.action ?? body.type,
     };
   }
 }

@@ -1,70 +1,103 @@
-# Loja de itens — servidor de Minecraft
+# Minecraft server store
 
-Loja em português do Brasil para um servidor de Minecraft vender VIPs, cash,
-kits/itens e chaves. Pagamento por **Pix** (Mercado Pago), com confirmação
-automática por webhook. **A entrega é manual**: o dono vê os pedidos pagos numa
-fila no painel e marca como entregue depois de dar o item no jogo.
+A Brazilian-Portuguese storefront where a Minecraft server owner sells VIP ranks,
+cash, kits/items and crate keys. Payment is **Pix** (Mercado Pago), confirmed
+automatically by webhook. **Delivery is manual**: paid orders land in a queue in
+the admin panel, and the owner marks each one delivered after handing the item
+over in game.
 
-Roda inteiro dentro de **um Worker da Cloudflare** — o front (React + Vite) é
-servido como asset estático e a API (Hono) atende `/api/*` no mesmo deploy.
+Everything runs inside **a single Cloudflare Worker** — the React front-end is
+served as static assets and the Hono API answers `/api/*` from the same deploy.
 
-## Comandos
+## Language policy
+
+**Code is English. Content is Portuguese.**
+
+- English: identifiers, comments, file names, commit messages, tests, database
+  tables and columns, API routes, docs.
+- Portuguese: anything a user reads — UI copy, error messages returned by the
+  API, seed data, product names, store settings. The audience is Brazilian.
+
+Slugs that come from content (`vip`, `chaves`, `vip-ouro-30-dias`) stay
+Portuguese: they are data, not code.
+
+## Commands
 
 ```bash
-npm run dev              # Vite + workerd (runtime real do Worker)
-npm run build            # typecheck + build
-npm run db:migrate:local # aplica migrations no D1 local
-npm run db:seed:local    # popula com dados de exemplo
-npm run db:generate      # gera migration a partir do schema Drizzle
-npx wrangler types       # regenera worker-configuration.d.ts
+npm run dev              # Vite + workerd (the real Worker runtime)
+npm test                 # 155 tests, unit + integration, inside workerd
+npm run typecheck
+npm run build
+
+npm run db:migrate:local # apply migrations to the local D1
+npm run db:seed:local    # sample data
+npm run db:generate      # generate a migration from the Drizzle schema
+npm run admin:create     # print the SQL that creates an admin user
+npx wrangler types       # regenerate worker-configuration.d.ts
 ```
 
-## Convenções inegociáveis
+## Non-negotiable conventions
 
-**Dinheiro é sempre inteiro em centavos.** Nunca float, em nenhuma camada —
-banco, API ou UI. `R$ 29,90` é `2990`. Formatação só na borda, com
-`formatarBRL()` de `src/shared/dinheiro.ts`.
+**Money is always an integer number of cents.** Never a float, in any layer —
+database, API or UI. `R$ 29,90` is `2990`. Formatting happens only at the edge,
+through `formatBRL()` in `src/shared/money.ts`.
 
-**O preço nunca vem do cliente.** O checkout recebe `produtoId` e `quantidade`;
-o Worker relê o preço no D1 e calcula o total. Aceitar valor enviado pelo
-navegador é o buraco de segurança número 1 deste tipo de loja.
+**The price never comes from the client.** Checkout accepts a product slug and a
+quantity; the Worker re-reads the price from D1 and computes the total. Accepting
+a value sent by the browser is the number one security hole in this kind of
+store, and there is a test that pins it.
 
-**Português do Brasil em tudo que o usuário vê**, e também nos nomes de tabelas,
-colunas e identificadores do domínio (`pedidos`, `precoCentavos`, `nick`).
-Termos técnicos consagrados ficam em inglês (`webhook`, `provider`, `slug`).
+**Secrets never live in the repository.** `.dev.vars` locally (gitignored) and
+`wrangler secret put` in production. Nothing sensitive in `wrangler.jsonc`.
 
-**Segredos nunca no repositório.** `.dev.vars` local (no `.gitignore`) e
-`wrangler secret put` em produção. Nada de chave em `wrangler.jsonc`.
+**Sales history is immutable.** `order_items` stores the name and price at
+purchase time. Changing a product's price must not rewrite past sales.
 
-**Histórico de venda é imutável.** `pedido_itens` guarda nome e preço no momento
-da compra. Mudar o preço de um produto não pode reescrever vendas antigas.
+**Every admin route is guarded server-side.** Hiding a screen in the front-end
+protects nothing. `src/worker/routes/admin/admin.test.ts` keeps a list of every
+protected route — add to it whenever you add a route.
 
-## Arquitetura
+## Architecture
 
 ```
-src/worker/    API Hono + acesso ao D1 + integração de pagamento
+src/worker/    Hono API, D1 access and the payment integration
   routes/      catalog, checkout, orders, webhook, admin/*
-  payments/    provider.ts (interface) + implementações trocáveis
-  db/          schema Drizzle + client
-src/shared/    tipos e helpers usados pelos dois lados
-src/app/       React (rotas, componentes, design system)
+  payments/    provider.ts (the contract) + swappable implementations
+  lib/         orders (state machine), auth, serializers, errors
+  db/          Drizzle schema + client
+src/shared/    types and helpers used by both sides
+src/app/       React: storefront, checkout, payment
+  admin/       the panel
+  styles/      design tokens
+src/test/      setup and helpers for the integration tests
 ```
 
-O front conversa com a API só por `src/app/lib/api.ts`. Nenhum componente chama
-`fetch` direto.
+The front-end talks to the API only through `src/app/lib/api.ts`. No component
+calls `fetch` directly.
 
 ## Runtime
 
-É Workers, não Node: sem `fs`, sem `path`, sem `Buffer` fora do
-`nodejs_compat`. Criptografia é `crypto.subtle` (WebCrypto). Trabalho pesado
-depois de responder vai em `ctx.waitUntil()`.
+This is Workers, not Node: no `fs`, no `path`, no `Buffer` outside
+`nodejs_compat`. Cryptography is `crypto.subtle` (WebCrypto). Work that outlives
+the response goes in `ctx.waitUntil()`.
 
-## Skills e agentes deste projeto
+## Testing
 
-- `.claude/skills/design-system/` — tokens, componentes e regras visuais.
-  **Leia antes de criar ou alterar qualquer tela.**
-- `.claude/skills/pagamentos-pix/` — contrato do provider, máquina de estados do
-  pedido e as regras de segurança do fluxo de pagamento.
+Tests run inside `workerd` with real D1 and KV (`@cloudflare/vitest-pool-workers`),
+against the same migrations that ship to production. Pure logic is unit tested;
+everything else goes through the actual HTTP routes.
+
+State is wiped between tests in `src/test/setup.ts` — storage is isolated per
+file, not per test, so without that a suite would pass alone and fail together.
+
+## Project skills and agents
+
+- `.claude/skills/design-system/` — tokens, components and visual rules.
+  **Read before creating or changing any screen.**
+- `.claude/skills/payments-pix/` — the provider contract, the order state machine
+  and the security rules of the payment flow.
 - `.claude/skills/cloudflare-worker/` — bindings, migrations, secrets, deploy.
-- Agente `ui-reviewer` — revisa telas contra o design system e acessibilidade.
-- Agente `pagamento-auditor` — audita mudanças no fluxo de pagamento.
+- `.claude/skills/testing/` — how the test suite is organised and what a new
+  feature is expected to cover.
+- Agent `ui-reviewer` — reviews screens against the design system and a11y.
+- Agent `payment-auditor` — audits changes to the payment flow.

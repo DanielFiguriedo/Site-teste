@@ -1,64 +1,76 @@
 ---
 name: cloudflare-worker
-description: Padrões do Worker deste projeto — bindings, migrations D1, R2, KV, secrets, dev local e deploy. Use ao mexer em wrangler.jsonc, no schema do banco, em upload de imagem, ou ao publicar.
+description: This project's Worker patterns — bindings, D1 migrations, R2, KV, secrets, local dev and deploy. Use when touching wrangler.jsonc, the database schema, image upload, or when publishing.
 ---
 
-# Worker da loja
+# The store Worker
 
-Front e API no mesmo Worker. `wrangler.jsonc` aponta `assets.directory` para o
-build do Vite, com `not_found_handling: "single-page-application"` e
-`run_worker_first: ["/api/*"]` — sem isso, a SPA engoliria as rotas da API.
+Front-end and API live in the same Worker. `wrangler.jsonc` points
+`assets.directory` at the Vite build, with `not_found_handling:
+"single-page-application"` and `run_worker_first: ["/api/*"]` — without the
+latter the SPA would swallow the API routes.
 
 ## Bindings
 
-| Binding | O quê | Para quê |
+| Binding | What | For |
 |---|---|---|
-| `DB` | D1 (SQLite) | Catálogo, pedidos, config, sessões de admin |
-| `BUCKET` | R2 | Imagens de produto enviadas pelo painel |
-| `SESSIONS` | KV | Revogação de sessão do admin |
+| `DB` | D1 (SQLite) | Catalog, orders, settings, admin users |
+| `BUCKET` | R2 | Product images uploaded from the panel |
+| `SESSIONS` | KV | Admin session revocation, and simulated charges in dev |
 
-Tipos em `src/worker/env.ts`. Depois de mexer no `wrangler.jsonc`, rode
+Types live in `src/worker/env.ts`. After changing `wrangler.jsonc`, run
 `npx wrangler types`.
 
-## Runtime — o que não existe
+## Runtime — what does not exist
 
-É `workerd`, não Node. Sem `fs`, sem `path`, sem acesso a disco. Criptografia é
-`crypto.subtle` (WebCrypto): PBKDF2 para senha, HMAC-SHA256 para cookie de
-sessão e assinatura de webhook. Trabalho depois da resposta vai em
+This is `workerd`, not Node. No `fs`, no `path`, no disk. Cryptography is
+`crypto.subtle` (WebCrypto): PBKDF2 for passwords, HMAC-SHA256 for the session
+cookie and webhook signatures. Work that outlives the response goes in
 `ctx.waitUntil()`.
 
-## Banco (D1 + Drizzle)
+One consequence worth remembering: a `fetch` from the Worker to its own public
+URL is a real subrequest and does **not** loop back in tests. That is why the
+test helper posts webhooks directly instead of going through
+`/api/dev/simulate-payment`.
 
-O schema é a fonte da verdade: edite `src/worker/db/schema.ts` e gere a
-migration, nunca escreva SQL na mão em `migrations/`.
+## Database (D1 + Drizzle)
+
+The schema is the source of truth: edit `src/worker/db/schema.ts` and generate
+the migration. Never hand-write SQL in `migrations/`.
 
 ```bash
-npm run db:generate        # gera a migration a partir do schema
-npm run db:migrate:local   # aplica no D1 local
-npm run db:seed:local      # dados de exemplo
+npm run db:generate        # generate a migration from the schema
+npm run db:migrate:local   # apply it to the local D1
+npm run db:seed:local      # sample data
 ```
 
-Índices importam: o free tier cobra por **linha lida**, e um full scan em
-`pedidos` queima a cota rápido. Toda coluna usada em `where` tem índice.
+Indexes matter: the free tier bills per **row read**, and a full scan of `orders`
+burns through the quota quickly. Every column used in a `where` has an index.
 
-## Dev local
+Column and table names are English; the values stored in them (product names,
+settings) are Portuguese, because they are content.
+
+## Local development
 
 ```bash
-npm run dev    # http://localhost:5173, com workerd de verdade
+npm run dev    # http://localhost:5173, with a real workerd
 ```
 
-Segredos locais em `.dev.vars` (no `.gitignore`). O cron é testável com
-`wrangler dev --test-scheduled` e
-`curl "http://localhost:5173/cdn-cgi/local/scheduled?cron=*+*+*+*+*"`.
+Local secrets go in `.dev.vars` (gitignored). The cron can be triggered with
+`curl http://localhost:5173/cdn-cgi/handler/scheduled`.
 
-## Deploy
+If the app suddenly renders blank while the API still answers, check for a stale
+`vite` process holding the port: the new server silently moves to 5174 and the
+browser keeps talking to the old one.
 
-Precisa dos acessos da conta Cloudflare do dono do servidor. A ordem é:
+## Deploying
+
+Requires access to the server owner's Cloudflare account. In order:
 
 ```bash
-npx wrangler d1 create loja-minecraft          # copie o id para wrangler.jsonc
-npx wrangler r2 bucket create loja-minecraft-imagens
-npx wrangler kv namespace create SESSIONS      # copie o id para wrangler.jsonc
+npx wrangler d1 create loja-minecraft          # copy the id into wrangler.jsonc
+npx wrangler r2 bucket create loja-minecraft-images
+npx wrangler kv namespace create SESSIONS      # copy the id into wrangler.jsonc
 npm run db:migrate:remote
 npx wrangler secret put MERCADOPAGO_ACCESS_TOKEN
 npx wrangler secret put MERCADOPAGO_WEBHOOK_SECRET
@@ -66,4 +78,6 @@ npx wrangler secret put SESSION_SECRET
 npm run deploy
 ```
 
-Segredo nenhum entra no `wrangler.jsonc` — ele é versionado.
+No secret ever goes into `wrangler.jsonc` — it is committed. The Turnstile
+**public** key is the exception: it ships in the HTML anyway, so it lives in
+`vars`.

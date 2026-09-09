@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { ApiErro } from "@shared/types";
+import type { ApiError } from "@shared/types";
 
-export async function api<T>(caminho: string, init?: RequestInit): Promise<T> {
-  const resposta = await fetch(`/api${caminho}`, {
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api${path}`, {
     ...init,
     headers: {
       ...(init?.body ? { "content-type": "application/json" } : {}),
@@ -10,61 +10,61 @@ export async function api<T>(caminho: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  if (!resposta.ok) {
-    const corpo = (await resposta.json().catch(() => null)) as ApiErro | null;
-    throw new Error(corpo?.erro ?? `Falha na requisição (${resposta.status}).`);
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ApiError | null;
+    throw new Error(body?.error ?? `Falha na requisição (${response.status}).`);
   }
-  return resposta.json() as Promise<T>;
+  return response.json() as Promise<T>;
 }
 
 /**
- * Envio de arquivo. Separado de `api` porque o corpo é `FormData`: definir
- * `content-type` na mão aqui quebraria o boundary que o navegador gera.
+ * File upload. Separate from `api` because the body is `FormData`: setting
+ * `content-type` by hand here would break the boundary the browser generates.
  */
-export async function apiUpload<T>(caminho: string, dados: FormData): Promise<T> {
-  const resposta = await fetch(`/api${caminho}`, { method: "POST", body: dados });
+export async function apiUpload<T>(path: string, data: FormData): Promise<T> {
+  const response = await fetch(`/api${path}`, { method: "POST", body: data });
 
-  if (!resposta.ok) {
-    const corpo = (await resposta.json().catch(() => null)) as ApiErro | null;
-    throw new Error(corpo?.erro ?? `Falha no envio do arquivo (${resposta.status}).`);
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ApiError | null;
+    throw new Error(body?.error ?? `Falha no envio do arquivo (${response.status}).`);
   }
-  return resposta.json() as Promise<T>;
+  return response.json() as Promise<T>;
 }
 
-export interface EstadoRequisicao<T> {
-  dados: T | undefined;
-  carregando: boolean;
-  erro: string | undefined;
+export interface RequestState<T> {
+  data: T | undefined;
+  loading: boolean;
+  error: string | undefined;
 }
 
 /**
- * Busca simples com cancelamento. Deliberadamente mínimo — a loja tem poucas
- * telas e nenhuma delas justifica trazer uma biblioteca de data fetching.
+ * Minimal fetch with cancellation. Deliberately small — the store has few
+ * screens and none of them justifies pulling in a data-fetching library.
  */
-export function useApi<T>(caminho: string | null): EstadoRequisicao<T> {
-  const [estado, setEstado] = useState<EstadoRequisicao<T>>({
-    dados: undefined,
-    carregando: caminho !== null,
-    erro: undefined,
+export function useApi<T>(path: string | null): RequestState<T> {
+  const [state, setState] = useState<RequestState<T>>({
+    data: undefined,
+    loading: path !== null,
+    error: undefined,
   });
 
   useEffect(() => {
-    if (caminho === null) return;
-    let cancelado = false;
+    if (path === null) return;
+    let cancelled = false;
 
-    setEstado((a) => ({ ...a, carregando: true, erro: undefined }));
-    api<T>(caminho)
-      .then((dados) => {
-        if (!cancelado) setEstado({ dados, carregando: false, erro: undefined });
+    setState((previous) => ({ ...previous, loading: true, error: undefined }));
+    api<T>(path)
+      .then((data) => {
+        if (!cancelled) setState({ data, loading: false, error: undefined });
       })
       .catch((e: Error) => {
-        if (!cancelado) setEstado({ dados: undefined, carregando: false, erro: e.message });
+        if (!cancelled) setState({ data: undefined, loading: false, error: e.message });
       });
 
     return () => {
-      cancelado = true;
+      cancelled = true;
     };
-  }, [caminho]);
+  }, [path]);
 
-  return estado;
+  return state;
 }

@@ -1,87 +1,87 @@
 import { Hono } from "hono";
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "../db/client";
-import { paraCategoria, paraProduto } from "../lib/mapeadores";
-import { naoEncontrado } from "../lib/erros";
+import { toCategory, toProduct } from "../lib/serializers";
+import { notFound } from "../lib/errors";
 import type { AppEnv } from "../env";
-import type { ConfigLoja } from "@shared/types";
+import type { StoreSettings } from "@shared/types";
 
-export const catalogo = new Hono<AppEnv>();
+export const catalog = new Hono<AppEnv>();
 
-/** Configuração pública da loja (nome, IP, prazo de entrega). */
-catalogo.get("/config", async (c) => {
-  const linhas = await db(c.env).select().from(schema.config);
-  const mapa = new Map(linhas.map((l) => [l.chave, l.valor]));
+/** Public store settings (name, IP, delivery time). */
+catalog.get("/settings", async (c) => {
+  const rows = await db(c.env).select().from(schema.settings);
+  const map = new Map(rows.map((row) => [row.key, row.value]));
 
-  const cfg: ConfigLoja = {
-    nomeServidor: mapa.get("nome_servidor") || "Loja Oficial",
-    ipServidor: mapa.get("ip_servidor") || null,
-    logoUrl: mapa.get("logo_url") || null,
-    discordConvite: mapa.get("discord_convite") || null,
-    prazoEntrega: mapa.get("prazo_entrega") || "em até 24 horas",
-    avisoEntrega:
-      mapa.get("aviso_entrega") ||
+  const settings: StoreSettings = {
+    serverName: map.get("server_name") || "Loja Oficial",
+    serverIp: map.get("server_ip") || null,
+    logoUrl: map.get("logo_url") || null,
+    discordInvite: map.get("discord_invite") || null,
+    deliveryTime: map.get("delivery_time") || "em até 24 horas",
+    deliveryNotice:
+      map.get("delivery_notice") ||
       "A entrega é feita manualmente pela nossa equipe após a confirmação do Pix.",
-    termosMd: mapa.get("termos_md") || null,
-    reembolsoMd: mapa.get("reembolso_md") || null,
+    termsMd: map.get("terms_md") || null,
+    refundPolicyMd: map.get("refund_policy_md") || null,
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY || null,
   };
-  return c.json(cfg);
+  return c.json(settings);
 });
 
-catalogo.get("/categorias", async (c) => {
-  const linhas = await db(c.env)
+catalog.get("/categories", async (c) => {
+  const rows = await db(c.env)
     .select()
-    .from(schema.categorias)
-    .where(eq(schema.categorias.ativo, true))
-    .orderBy(asc(schema.categorias.ordem));
+    .from(schema.categories)
+    .where(eq(schema.categories.active, true))
+    .orderBy(asc(schema.categories.position));
 
-  return c.json(linhas.map(paraCategoria));
+  return c.json(rows.map(toCategory));
 });
 
 /**
- * Lista de produtos ativos. `?categoria=<slug>` filtra; `?destaque=1` traz só
- * os destacados (usado na home).
+ * Active products. `?category=<slug>` filters; `?featured=1` returns only the
+ * featured ones (used by the home page).
  */
-catalogo.get("/produtos", async (c) => {
-  const slugCategoria = c.req.query("categoria");
-  const soDestaque = c.req.query("destaque") === "1";
+catalog.get("/products", async (c) => {
+  const categorySlug = c.req.query("category");
+  const featuredOnly = c.req.query("featured") === "1";
 
-  const filtros = [eq(schema.produtos.ativo, true)];
-  if (slugCategoria) filtros.push(eq(schema.categorias.slug, slugCategoria));
-  if (soDestaque) filtros.push(eq(schema.produtos.destaque, true));
+  const filters = [eq(schema.products.active, true)];
+  if (categorySlug) filters.push(eq(schema.categories.slug, categorySlug));
+  if (featuredOnly) filters.push(eq(schema.products.featured, true));
 
-  const linhas = await db(c.env)
-    .select({ produto: schema.produtos, categoria: schema.categorias })
-    .from(schema.produtos)
-    .innerJoin(schema.categorias, eq(schema.produtos.categoriaId, schema.categorias.id))
-    .where(and(...filtros))
-    .orderBy(asc(schema.categorias.ordem), asc(schema.produtos.ordem));
+  const rows = await db(c.env)
+    .select({ product: schema.products, category: schema.categories })
+    .from(schema.products)
+    .innerJoin(schema.categories, eq(schema.products.categoryId, schema.categories.id))
+    .where(and(...filters))
+    .orderBy(asc(schema.categories.position), asc(schema.products.position));
 
-  return c.json(linhas.map((l) => paraProduto(l.produto, l.categoria)));
+  return c.json(rows.map((row) => toProduct(row.product, row.category)));
 });
 
-catalogo.get("/produtos/:slug", async (c) => {
-  const [linha] = await db(c.env)
-    .select({ produto: schema.produtos, categoria: schema.categorias })
-    .from(schema.produtos)
-    .innerJoin(schema.categorias, eq(schema.produtos.categoriaId, schema.categorias.id))
-    .where(and(eq(schema.produtos.slug, c.req.param("slug")), eq(schema.produtos.ativo, true)))
+catalog.get("/products/:slug", async (c) => {
+  const [row] = await db(c.env)
+    .select({ product: schema.products, category: schema.categories })
+    .from(schema.products)
+    .innerJoin(schema.categories, eq(schema.products.categoryId, schema.categories.id))
+    .where(and(eq(schema.products.slug, c.req.param("slug")), eq(schema.products.active, true)))
     .limit(1);
 
-  if (!linha) throw naoEncontrado("Produto");
-  return c.json(paraProduto(linha.produto, linha.categoria));
+  if (!row) throw notFound("Produto");
+  return c.json(toProduct(row.product, row.category));
 });
 
-/** Serve as imagens de produto guardadas no R2. */
-catalogo.get("/imagens/:key{.+}", async (c) => {
-  const objeto = await c.env.BUCKET.get(c.req.param("key"));
-  if (!objeto) throw naoEncontrado("Imagem");
+/** Serves product images stored in R2. */
+catalog.get("/images/:key{.+}", async (c) => {
+  const object = await c.env.BUCKET.get(c.req.param("key"));
+  if (!object) throw notFound("Imagem");
 
   const headers = new Headers();
-  objeto.writeHttpMetadata(headers);
-  headers.set("etag", objeto.httpEtag);
-  // A chave inclui um hash do conteúdo, então o cache pode ser agressivo.
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  // The key embeds a content hash, so caching can be aggressive.
   headers.set("cache-control", "public, max-age=31536000, immutable");
-  return new Response(objeto.body, { headers });
+  return new Response(object.body, { headers });
 });

@@ -1,149 +1,180 @@
-# Loja do servidor de Minecraft
+# Minecraft server store
 
-Loja online em português do Brasil para um servidor de Minecraft vender VIPs,
-cash, kits/itens e chaves. Pagamento por **Pix** com confirmação automática.
+A storefront in Brazilian Portuguese where a Minecraft server owner sells VIP
+ranks, cash, kits/items and crate keys. Payment is **Pix**, confirmed
+automatically.
 
-A entrega é **manual**: quando o Pix é confirmado, o pedido entra numa fila no
-painel, e o dono marca como entregue depois de dar o item no jogo. Isso está
-dito de forma explícita para o comprador na home, no produto, no checkout e na
-tela de pagamento — esconder isso só transferiria a frustração para o suporte.
+Delivery is **manual**: once the Pix clears, the order joins a queue in the admin
+panel and the owner marks it delivered after handing the item over in game. That
+is stated plainly to the buyer on the home page, the product page, checkout and
+the payment screen — hiding it would only move the frustration to support.
 
-Tudo roda em **um único Worker da Cloudflare**: o front-end (React + Vite) é
-servido como asset estático e a API (Hono) atende `/api/*` no mesmo deploy.
+Everything runs inside **one Cloudflare Worker**: the front-end (React + Vite) is
+served as static assets and the API (Hono) answers `/api/*` from the same deploy.
+
+The code is English; everything a user reads is Portuguese. See `CLAUDE.md` for
+the full convention.
 
 ---
 
-## Como rodar na sua máquina
+## Running it locally
 
-Requisitos: Node 20 ou mais novo.
+Requires Node 20 or newer.
 
 ```bash
 npm install
-cp .dev.vars.exemplo .dev.vars     # ajuste se quiser
-npm run db:migrate:local           # cria as tabelas no D1 local
-npm run db:seed:local              # produtos de exemplo
+cp .dev.vars.example .dev.vars     # adjust if you like
+npm run db:migrate:local           # create the tables in the local D1
+npm run db:seed:local              # sample products
 npm run dev                        # http://localhost:5173
 ```
 
-Para entrar no painel, crie um usuário:
+To sign in to the panel, create a user:
 
 ```bash
-npm run admin:criar -- voce@exemplo.com "uma-senha-forte"
-# copie o SQL impresso e rode:
-npx wrangler d1 execute loja-minecraft --local --command "<o SQL>"
+npm run admin:create -- you@example.com "a-strong-password"
+# copy the printed SQL and run it:
+npx wrangler d1 execute loja-minecraft --local --command "<the SQL>"
 ```
 
-Depois acesse `http://localhost:5173/admin`.
+Then open `http://localhost:5173/admin`.
 
-Em desenvolvimento o provedor de pagamento é o **simulado**: a tela de pagamento
-ganha um botão "Simular pagamento" que dispara um webhook assinado no endpoint
-real. Isso existe porque o sandbox do Mercado Pago **não permite pagar um Pix de
-verdade** — sem o simulador não haveria como exercitar o fluxo inteiro antes de
-ir ao ar.
-
-```bash
-npm test          # 28 testes: dinheiro, estados do pedido, assinatura, senha
-npm run typecheck
-```
+In development the payment provider is the **simulated** one: the payment screen
+gets a "simulate payment" button that posts a signed webhook to the real
+endpoint. It exists because Mercado Pago's sandbox **cannot actually pay a Pix
+charge** — without it there would be no way to exercise the whole flow before
+going live.
 
 ---
 
-## Publicar na Cloudflare
+## Tests
 
-Precisa de acesso à conta Cloudflare do dono do servidor. O free tier cobre
-tudo com folga (D1: 5 GB, 5 milhões de leituras/dia).
+```bash
+npm test           # 155 tests
+npm run test:watch
+npm run typecheck
+```
 
-### 1. Criar os recursos
+Tests run inside the real Workers runtime (`workerd`) with real D1 and KV, against
+the same migrations that ship to production. That is deliberate: unit tests over
+pure logic cannot catch a broken SQL query, a missing migration or an auth
+middleware that stopped guarding a route — which is exactly what breaks when a
+feature is added.
+
+| Layer | What it covers |
+|---|---|
+| Unit | money arithmetic, slugs, the order state machine, HMAC signatures, password hashing |
+| Catalog | active-only listing, filters, product lookup, store settings |
+| Checkout | server-side pricing, forged prices, stock, pay-what-you-want, gifting, per-IP limit |
+| Webhook | signature, tampered body, idempotency, wrong amount, payment after expiry |
+| Orders | public payload, what must not leak, Pix code lifetime |
+| Admin | every protected route without a session, CRUD, delivery queue, transitions, upload |
+| Cron | expiry only after asking the gateway, lost-webhook recovery, ordering |
+
+---
+
+## Deploying to Cloudflare
+
+You need access to the server owner's Cloudflare account. The free tier covers
+all of this comfortably (D1: 5 GB, 5 million reads/day).
+
+### 1. Create the resources
 
 ```bash
 npx wrangler login
 
 npx wrangler d1 create loja-minecraft
-npx wrangler r2 bucket create loja-minecraft-imagens
+npx wrangler r2 bucket create loja-minecraft-images
 npx wrangler kv namespace create SESSIONS
 ```
 
-Cada comando imprime um `id`. Copie-os para o `wrangler.jsonc`, nos lugares
-marcados com `PREENCHER_...`.
+Each command prints an `id`. Copy them into `wrangler.jsonc`, where the
+`FILL_IN_...` placeholders are.
 
-### 2. Preparar o banco
+### 2. Prepare the database
 
 ```bash
 npm run db:migrate:remote
-npm run admin:criar -- dono@servidor.com "senha-forte-de-verdade"
-npx wrangler d1 execute loja-minecraft --remote --command "<o SQL impresso>"
+npm run admin:create -- owner@server.com "a-genuinely-strong-password"
+npx wrangler d1 execute loja-minecraft --remote --command "<the printed SQL>"
 ```
 
-### 3. Configurar os segredos
+### 3. Configure the secrets
 
-Nenhum deles entra no `wrangler.jsonc`, que é versionado:
+None of these belong in `wrangler.jsonc`, which is committed:
 
 ```bash
-npx wrangler secret put SESSION_SECRET              # texto aleatório longo
+npx wrangler secret put SESSION_SECRET              # a long random string
 npx wrangler secret put MERCADOPAGO_ACCESS_TOKEN
 npx wrangler secret put MERCADOPAGO_WEBHOOK_SECRET
-npx wrangler secret put TURNSTILE_SECRET_KEY        # opcional, anti-robô
+npx wrangler secret put TURNSTILE_SECRET_KEY        # optional, anti-bot
 ```
 
-### 4. Publicar
+For Turnstile, also set the **public** key in `wrangler.jsonc` under
+`vars.TURNSTILE_SITE_KEY`. Leaving it empty disables the widget.
+
+### 4. Publish
 
 ```bash
 npm run deploy
 ```
 
-### 5. Ligar o webhook no Mercado Pago
+### 5. Point the webhook at the store
 
-No painel do Mercado Pago, em **Suas integrações → Webhooks**, aponte para:
+In the Mercado Pago dashboard, under **Your integrations → Webhooks**, point it
+at:
 
 ```
-https://<seu-dominio>/api/webhook/pix
+https://<your-domain>/api/webhook/pix
 ```
 
-Marque o evento **Pagamentos**. O painel gera uma **chave secreta** — é ela que
-vai em `MERCADOPAGO_WEBHOOK_SECRET`. Atenção: essa chave **não** é o access
-token; são duas coisas diferentes, e trocá-las faz todo webhook ser recusado.
+Subscribe to the **Payments** event. The dashboard generates a **secret key** —
+that is what goes into `MERCADOPAGO_WEBHOOK_SECRET`. Note it is **not** the
+access token; they are two different things, and swapping them makes every
+webhook get rejected.
 
-### 6. Teste final
+### 6. Final check
 
-O sandbox do Mercado Pago não paga Pix. Então o último teste é real: crie um
-produto de **R$ 0,01**, compre, pague, confira que o pedido aparece como pago no
-painel, e depois desative o produto.
+Mercado Pago's sandbox cannot pay a Pix charge, so the last test is a real one:
+create a **R$ 0,01** product, buy it, pay it, confirm the order shows up as paid
+in the panel, then deactivate the product.
 
 ---
 
-## Onde mexer em quê
+## Where to change what
 
 ```
-src/worker/          API, banco e pagamento
+src/worker/          API, database and payment
   routes/            catalog, checkout, orders, webhook, admin/*
-  payments/          provider.ts (contrato) + mercadopago.ts + mock.ts
-  lib/pedidos.ts     máquina de estados, criação de pedido, reconciliação
-  db/schema.ts       fonte da verdade do banco (gere migration, não escreva SQL)
-src/shared/          tipos e helpers usados pelos dois lados
-src/app/             React: vitrine, checkout, pagamento
-  admin/             painel
+  payments/          provider.ts (contract) + mercadopago.ts + mock.ts
+  lib/orders.ts      state machine, order creation, reconciliation
+  db/schema.ts       source of truth for the database (generate migrations,
+                     never hand-write SQL)
+src/shared/          types and helpers used by both sides
+src/app/             React: storefront, checkout, payment
+  admin/             the panel
   styles/theme.css   design system (tokens)
+src/test/            setup and helpers for the integration tests
 ```
 
-Convenções e regras do projeto estão em `CLAUDE.md`, e o detalhamento em
-`.claude/skills/`.
+Conventions live in `CLAUDE.md`; the details are in `.claude/skills/`.
 
 ---
 
-## O que fica de fora, de propósito
+## Deliberately out of scope
 
-- **Entrega automática no jogo.** Está fora do escopo desta versão. Quando entrar,
-  o gancho natural é o momento em que o pedido passa para `pago`
-  (`marcarComoPago`, em `src/worker/lib/pedidos.ts`).
-- **Carrinho com vários produtos.** Hoje a compra é de um produto por pedido. O
-  banco já suporta vários itens (`pedido_itens`), então é só a interface.
-- **Outros meios de pagamento.** Só Pix, como pedido. Trocar ou somar gateway é
-  implementar `PaymentProvider` num arquivo novo.
+- **Automatic in-game delivery.** Not part of this version. When it arrives, the
+  natural hook is the moment an order becomes `paid` (`markAsPaid`, in
+  `src/worker/lib/orders.ts`).
+- **A multi-product cart.** Today one order carries one product. The database
+  already supports several items (`order_items`), so it is a UI change.
+- **Other payment methods.** Pix only, as requested. Swapping or adding a gateway
+  means implementing `PaymentProvider` in one new file.
 
 ---
 
-## Aviso legal
+## Legal note
 
-Não somos afiliados à Mojang AB ou à Microsoft. Preencha os Termos de Uso e a
-Política de Reembolso no painel antes de vender: no Brasil, o Código de Defesa
-do Consumidor dá direito de arrependimento em 7 dias na compra à distância.
+Not affiliated with Mojang AB or Microsoft. Fill in the Terms of Use and the
+Refund Policy in the panel before selling: in Brazil the consumer code grants a
+7-day right of withdrawal on distance purchases.

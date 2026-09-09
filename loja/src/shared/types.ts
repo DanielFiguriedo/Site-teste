@@ -1,120 +1,126 @@
 /**
- * Tipos compartilhados entre o Worker e o front-end.
+ * Types shared between the Worker and the front-end.
  *
- * Regra que atravessa todo o sistema: dinheiro é sempre inteiro em CENTAVOS.
- * Nunca float — arredondamento de ponto flutuante em dinheiro é a origem
- * clássica de divergência entre o total do site e o extrato do gateway.
+ * Rule that runs through the whole system: money is always an integer amount of
+ * cents. Never a float — floating point rounding on money is the classic source
+ * of drift between what the site shows and what the gateway settles.
  */
 
-export type Centavos = number;
+export type Cents = number;
 
-export const STATUS_PEDIDO = [
-  "aguardando_pagamento",
-  "pago",
-  "em_revisao",
-  "entregue",
-  "expirado",
-  "cancelado",
-  "reembolsado",
+export const ORDER_STATUSES = [
+  "awaiting_payment",
+  "paid",
+  "needs_review",
+  "delivered",
+  "expired",
+  "cancelled",
+  "refunded",
 ] as const;
 
-export type StatusPedido = (typeof STATUS_PEDIDO)[number];
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-export type TomStatus = "accent" | "neutro" | "warn" | "danger";
+export type StatusTone = "accent" | "neutral" | "warn" | "danger";
 
 /**
- * Como cada status é mostrado. Fica aqui, e não em cada tela, porque a vitrine
- * e o painel precisam falar a mesma língua — e porque a chave do banco
- * ("aguardando_pagamento") nunca deve chegar ao usuário.
+ * How each status is presented.
+ *
+ * Lives here rather than in each screen because the storefront and the admin
+ * panel must speak the same language — and because the database key
+ * ("awaiting_payment") must never reach the user.
+ *
+ * The labels are Portuguese on purpose: they are content, shown to a Brazilian
+ * audience.
  */
-export const ROTULO_STATUS: Record<StatusPedido, { texto: string; tom: TomStatus }> = {
-  aguardando_pagamento: { texto: "Aguardando pagamento", tom: "warn" },
-  pago: { texto: "Pago — na fila de entrega", tom: "accent" },
-  em_revisao: { texto: "Em revisão", tom: "warn" },
-  entregue: { texto: "Entregue", tom: "neutro" },
-  expirado: { texto: "Expirado", tom: "neutro" },
-  cancelado: { texto: "Cancelado", tom: "danger" },
-  reembolsado: { texto: "Reembolsado", tom: "neutro" },
+export const ORDER_STATUS_LABELS: Record<OrderStatus, { text: string; tone: StatusTone }> = {
+  awaiting_payment: { text: "Aguardando pagamento", tone: "warn" },
+  paid: { text: "Pago — na fila de entrega", tone: "accent" },
+  needs_review: { text: "Em revisão", tone: "warn" },
+  delivered: { text: "Entregue", tone: "neutral" },
+  expired: { text: "Expirado", tone: "neutral" },
+  cancelled: { text: "Cancelado", tone: "danger" },
+  refunded: { text: "Reembolsado", tone: "neutral" },
 };
 
-export type Plataforma = "java" | "bedrock";
+export type Platform = "java" | "bedrock";
 
-export interface Categoria {
+export interface Category {
   id: number;
   slug: string;
-  nome: string;
-  descricao: string | null;
-  icone: string | null;
-  ordem: number;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  position: number;
 }
 
-export interface Produto {
+export interface Product {
   id: number;
-  categoriaId: number;
-  categoriaSlug: string;
-  categoriaNome: string;
+  categoryId: number;
+  categorySlug: string;
+  categoryName: string;
   slug: string;
-  nome: string;
-  descricaoCurta: string | null;
-  descricaoMd: string | null;
-  precoCentavos: Centavos;
-  /** Preço "de" (riscado). Nulo quando não há promoção. */
-  precoDeCentavos: Centavos | null;
-  /** ISO 8601. Nulo quando a promoção não expira. */
-  promocaoExpiraEm: string | null;
-  /** Nulo = permanente. Usado nos VIPs por tempo. */
-  duracaoDias: number | null;
-  imagemUrl: string | null;
-  presenteavel: boolean;
-  /** Produto de doação: o comprador escolhe o valor (>= precoCentavos). */
-  precoLivre: boolean;
-  destaque: boolean;
-  /** Nulo = estoque ilimitado. */
-  estoque: number | null;
+  name: string;
+  shortDescription: string | null;
+  descriptionMd: string | null;
+  priceCents: Cents;
+  /** Struck-through "was" price. Null when there is no sale. */
+  originalPriceCents: Cents | null;
+  /** ISO 8601. Null when the sale has no end date. */
+  saleEndsAt: string | null;
+  /** Null means permanent. Used by time-limited VIP ranks. */
+  durationDays: number | null;
+  imageUrl: string | null;
+  giftable: boolean;
+  /** Donation product: the buyer picks the amount, at or above `priceCents`. */
+  payWhatYouWant: boolean;
+  featured: boolean;
+  /** Null means unlimited. */
+  stock: number | null;
 }
 
-export interface ItemPedido {
-  produtoId: number;
-  nome: string;
-  precoCentavos: Centavos;
-  quantidade: number;
-  imagemUrl: string | null;
+export interface OrderItem {
+  productId: number;
+  name: string;
+  priceCents: Cents;
+  quantity: number;
+  imageUrl: string | null;
 }
 
-export interface Pedido {
+export interface Order {
   publicId: string;
   nick: string;
-  plataforma: Plataforma;
-  nickPresenteado: string | null;
-  status: StatusPedido;
-  totalCentavos: Centavos;
-  itens: ItemPedido[];
-  pixCopiaCola: string | null;
+  platform: Platform;
+  recipientNick: string | null;
+  status: OrderStatus;
+  totalCents: Cents;
+  items: OrderItem[];
+  /** The Pix BR Code — what the UI calls "copia e cola". */
+  pixBrCode: string | null;
   pixQrBase64: string | null;
   /** ISO 8601 */
-  expiraEm: string | null;
-  criadoEm: string;
-  pagoEm: string | null;
-  entregueEm: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  deliveredAt: string | null;
 }
 
-export interface ConfigLoja {
-  nomeServidor: string;
-  ipServidor: string | null;
+export interface StoreSettings {
+  serverName: string;
+  serverIp: string | null;
   logoUrl: string | null;
-  discordConvite: string | null;
-  /** Texto curto: "em até 24 horas", usado nas telas de pagamento e sucesso. */
-  prazoEntrega: string;
-  avisoEntrega: string;
-  /** Conteúdo em markdown das páginas legais, editável no painel. */
-  termosMd: string | null;
-  reembolsoMd: string | null;
-  /** Vazia quando o Turnstile não está configurado. */
+  discordInvite: string | null;
+  /** Short phrase like "em até 24 horas", shown on the payment screens. */
+  deliveryTime: string;
+  deliveryNotice: string;
+  /** Markdown for the legal pages, editable from the admin panel. */
+  termsMd: string | null;
+  refundPolicyMd: string | null;
+  /** Empty when Turnstile is not configured. */
   turnstileSiteKey: string | null;
 }
 
-/** Envelope de erro devolvido por toda a API. */
-export interface ApiErro {
-  erro: string;
-  detalhes?: unknown;
+/** Error envelope returned by every API route. */
+export interface ApiError {
+  error: string;
+  details?: unknown;
 }

@@ -1,89 +1,89 @@
 /**
- * Contrato do provedor de pagamento.
+ * Payment provider contract.
  *
- * Existe para que trocar de gateway custe um arquivo, e não uma refatoração:
- * o tipo de conta do dono do servidor (CPF ou MEI) ainda não está definido, e
- * isso pode mudar qual gateway aceita o cadastro.
+ * It exists so that swapping gateways costs one file rather than a refactor:
+ * the store owner's account type (individual CPF or company CNPJ) is still
+ * undecided, and that can change which gateway accepts the signup.
  */
 
-/** Status normalizado — cada gateway tem o seu vocabulário; aqui é sempre este. */
-export type StatusCobranca = "pendente" | "pago" | "expirado" | "cancelado" | "reembolsado";
+/** Normalised status — every gateway has its own vocabulary; ours is this one. */
+export type ChargeStatus = "pending" | "paid" | "expired" | "cancelled" | "refunded";
 
-export interface CobrancaPix {
-  /** Identificador da cobrança no gateway. */
+export interface PixCharge {
+  /** Charge identifier at the gateway. */
   chargeId: string;
-  /** BR Code — o "copia e cola" do Pix. */
-  copiaCola: string;
-  /** PNG do QR Code em base64, sem o prefixo `data:`. Nulo se o gateway não enviar. */
+  /** The BR Code — Pix "copy and paste" payload. */
+  brCode: string;
+  /** QR Code PNG in base64, without the `data:` prefix. Null if not provided. */
   qrBase64: string | null;
-  /** Momento em que a cobrança deixa de ser pagável. */
-  expiraEm: Date;
+  /** Moment the charge stops being payable. */
+  expiresAt: Date;
 }
 
-export interface DadosCobranca {
-  /** `public_id` do pedido — vira a referência externa no gateway. */
-  referencia: string;
-  totalCentavos: number;
-  descricao: string;
-  emailPagador: string;
-  /** URL absoluta que o gateway chama quando o pagamento muda de estado. */
-  urlWebhook: string;
-  /** Minutos de validade do QR Code. */
-  minutosValidade: number;
+export interface ChargeInput {
+  /** The order's `publicId` — becomes the external reference at the gateway. */
+  reference: string;
+  totalCents: number;
+  description: string;
+  payerEmail: string;
+  /** Absolute URL the gateway calls when the payment changes state. */
+  webhookUrl: string;
+  /** How many minutes the QR Code stays valid. */
+  validityMinutes: number;
 }
 
-export interface SituacaoCobranca {
-  status: StatusCobranca;
-  /** Valor efetivamente pago, em centavos. Nulo enquanto não houver pagamento. */
-  valorPagoCentavos: number | null;
+export interface ChargeState {
+  status: ChargeStatus;
+  /** Amount actually paid, in cents. Null while there is no payment. */
+  paidCents: number | null;
 }
 
-export interface EventoWebhook {
-  /** Id do evento no gateway. É a chave de idempotência. */
-  eventoId: string;
-  /** Id da cobrança a que o evento se refere. */
+export interface WebhookEvent {
+  /** Event id at the gateway. This is the idempotency key. */
+  eventId: string;
+  /** Id of the charge the event refers to. */
   chargeId: string;
-  tipo: string;
+  type: string;
 }
 
 export interface PaymentProvider {
-  readonly nome: string;
+  readonly name: string;
 
-  criarCobrancaPix(dados: DadosCobranca): Promise<CobrancaPix>;
+  createPixCharge(input: ChargeInput): Promise<PixCharge>;
 
-  consultarCobranca(chargeId: string): Promise<SituacaoCobranca>;
+  getCharge(chargeId: string): Promise<ChargeState>;
 
   /**
-   * Valida a assinatura do webhook contra o corpo CRU da requisição.
-   * Nunca receba aqui um JSON re-serializado: a assinatura é sobre os bytes
-   * originais, e qualquer reserialização a invalida.
+   * Validates the webhook signature against the RAW request body.
+   * Never pass re-serialised JSON here: the signature covers the original
+   * bytes, and any reserialisation invalidates it.
    */
-  verificarAssinaturaWebhook(corpoCru: string, cabecalhos: Headers): Promise<boolean>;
+  verifyWebhookSignature(rawBody: string, headers: Headers): Promise<boolean>;
 
-  /** Extrai o que importa do payload. Retorna null se o evento for irrelevante. */
-  extrairEvento(corpoCru: string, cabecalhos: Headers): EventoWebhook | null;
+  /** Extracts what matters from the payload. Returns null for irrelevant events. */
+  parseEvent(rawBody: string, headers: Headers): WebhookEvent | null;
 }
 
-/** Comparação de strings em tempo constante, para não vazar a assinatura por timing. */
-export function comparaSegura(a: string, b: string): boolean {
+/** Constant-time string comparison, so the signature does not leak via timing. */
+export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
-  let diferenca = 0;
+  let difference = 0;
   for (let i = 0; i < a.length; i++) {
-    diferenca |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
-  return diferenca === 0;
+  return difference === 0;
 }
 
-/** HMAC-SHA256 em hexadecimal, via WebCrypto (não existe `node:crypto` aqui). */
-export async function hmacSha256Hex(segredo: string, mensagem: string): Promise<string> {
-  const codificador = new TextEncoder();
-  const chave = await crypto.subtle.importKey(
+/** HMAC-SHA256 as hex, through WebCrypto (`node:crypto` does not exist here). */
+export async function hmacSha256Hex(secret: string, message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
     "raw",
-    codificador.encode(segredo),
+    encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const assinatura = await crypto.subtle.sign("HMAC", chave, codificador.encode(mensagem));
-  return [...new Uint8Array(assinatura)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  return [...new Uint8Array(signature)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

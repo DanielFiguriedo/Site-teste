@@ -1,0 +1,14 @@
+# Copy to .dev.vars (which stays out of Git) and adjust.
+ENVIRONMENT=development
+
+# "mock" uses the simulated provider, with a "simulate payment" button on the
+# payment screen. Switching to "mercadopago" requires both secrets below.
+PAYMENT_PROVIDER=mock
+
+# Any long string works in development. In production use
+# `wrangler secret put SESSION_SECRET` with something random.
+SESSION_SECRET=change-this-value-in-production
+
+# MERCADOPAGO_ACCESS_TOKEN=
+# MERCADOPAGO_WEBHOOK_SECRET=
+# TURNSTILE_SECRET_KEY=

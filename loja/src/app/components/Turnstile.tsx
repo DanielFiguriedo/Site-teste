@@ -4,8 +4,8 @@ declare global {
   interface Window {
     turnstile?: {
       render: (
-        alvo: HTMLElement,
-        opcoes: {
+        target: HTMLElement,
+        options: {
           sitekey: string;
           callback: (token: string) => void;
           "expired-callback"?: () => void;
@@ -21,33 +21,33 @@ declare global {
 const SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
 /**
- * Widget anti-robô do Cloudflare Turnstile.
+ * Cloudflare Turnstile anti-bot widget.
  *
- * Sem ele, um script criaria milhares de cobranças Pix por minuto — o que suja
- * o painel do gateway e pode derrubar a conta. O componente só aparece quando
- * há `siteKey`, para o ambiente de desenvolvimento seguir utilizável sem
- * configurar nada.
+ * Without it a script could create thousands of Pix charges per minute, which
+ * pollutes the gateway dashboard and can get the account suspended. The widget
+ * only renders when a site key exists, so development stays usable with nothing
+ * configured.
  */
 export function Turnstile({
   siteKey,
-  aoResolver,
+  onResolve,
 }: {
   siteKey: string;
-  aoResolver: (token: string | null) => void;
+  onResolve: (token: string | null) => void;
 }) {
-  const alvo = useRef<HTMLDivElement>(null);
-  // Guardado em ref porque o callback do widget é registrado uma vez só e não
-  // deve prender a primeira versão da função.
-  const callback = useRef(aoResolver);
-  callback.current = aoResolver;
+  const target = useRef<HTMLDivElement>(null);
+  // Kept in a ref because the widget callback is registered once and must not
+  // capture the first version of the function.
+  const callback = useRef(onResolve);
+  callback.current = onResolve;
 
   useEffect(() => {
     let widgetId: string | undefined;
-    let cancelado = false;
+    let cancelled = false;
 
-    const renderizar = () => {
-      if (cancelado || !alvo.current || !window.turnstile) return;
-      widgetId = window.turnstile.render(alvo.current, {
+    const render = () => {
+      if (cancelled || !target.current || !window.turnstile) return;
+      widgetId = window.turnstile.render(target.current, {
         sitekey: siteKey,
         theme: "dark",
         callback: (token) => callback.current(token),
@@ -57,10 +57,10 @@ export function Turnstile({
     };
 
     if (window.turnstile) {
-      renderizar();
+      render();
     } else {
-      // Um único <script> para a página inteira, mesmo que o componente monte
-      // e desmonte várias vezes.
+      // A single script tag for the whole page, even if the component mounts
+      // and unmounts several times.
       let script = document.querySelector<HTMLScriptElement>(`script[src="${SCRIPT}"]`);
       if (!script) {
         script = document.createElement("script");
@@ -68,14 +68,14 @@ export function Turnstile({
         script.async = true;
         document.head.appendChild(script);
       }
-      script.addEventListener("load", renderizar);
+      script.addEventListener("load", render);
     }
 
     return () => {
-      cancelado = true;
+      cancelled = true;
       if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
     };
   }, [siteKey]);
 
-  return <div ref={alvo} className="min-h-[65px]" />;
+  return <div ref={target} className="min-h-[65px]" />;
 }
