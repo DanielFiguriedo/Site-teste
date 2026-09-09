@@ -82,7 +82,15 @@ export const pedidos = sqliteTable(
     nickPresenteado: text("nick_presenteado"),
     totalCentavos: integer("total_centavos").notNull(),
     status: text("status", {
-      enum: ["aguardando_pagamento", "pago", "entregue", "expirado", "cancelado", "reembolsado"],
+      enum: [
+        "aguardando_pagamento",
+        "pago",
+        "em_revisao",
+        "entregue",
+        "expirado",
+        "cancelado",
+        "reembolsado",
+      ],
     })
       .notNull()
       .default("aguardando_pagamento"),

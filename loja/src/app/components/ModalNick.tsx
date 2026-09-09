@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { Plataforma } from "@shared/types";
 import { nickValido, useJogador } from "../lib/nick";
+import { useModal } from "../lib/modal";
 import { AvatarNick } from "./AvatarNick";
 import { Botao } from "./Botao";
 import { cn } from "../lib/cn";
@@ -16,25 +17,20 @@ export function ModalNick({ aberto, aoFechar }: { aberto: boolean; aoFechar: () 
   const { jogador, salvar } = useJogador();
   const [nick, setNick] = useState(jogador?.nick ?? "");
   const [plataforma, setPlataforma] = useState<Plataforma>(jogador?.plataforma ?? "java");
-  const campo = useRef<HTMLInputElement>(null);
+  const caixa = useModal(aberto, aoFechar);
+  const idErro = useId();
 
   useEffect(() => {
     if (!aberto) return;
     setNick(jogador?.nick ?? "");
     setPlataforma(jogador?.plataforma ?? "java");
-    // Foco no campo assim que o modal abre, para dar para digitar direto.
-    const t = setTimeout(() => campo.current?.focus(), 50);
-    const aoTeclar = (e: KeyboardEvent) => e.key === "Escape" && aoFechar();
-    window.addEventListener("keydown", aoTeclar);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener("keydown", aoTeclar);
-    };
-  }, [aberto, jogador, aoFechar]);
+  }, [aberto, jogador]);
 
   if (!aberto) return null;
 
   const valido = nickValido(nick, plataforma);
+  const invalido = nick.length > 0 && !valido;
+
   const confirmar = () => {
     if (!valido) return;
     salvar({ nick: nick.trim(), plataforma });
@@ -48,6 +44,7 @@ export function ModalNick({ aberto, aoFechar }: { aberto: boolean; aoFechar: () 
       role="presentation"
     >
       <div
+        ref={caixa}
         className="w-full max-w-md rounded-card border border-line-strong bg-surface-1 p-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -66,12 +63,13 @@ export function ModalNick({ aberto, aoFechar }: { aberto: boolean; aoFechar: () 
             {valido ? (
               <AvatarNick nick={nick.trim()} tamanho={54} />
             ) : (
-              <span className="text-xs text-ink-faint">?</span>
+              <span className="text-xs text-ink-faint" aria-hidden="true">
+                ?
+              </span>
             )}
           </div>
 
           <input
-            ref={campo}
             value={nick}
             onChange={(e) => setNick(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && confirmar()}
@@ -79,17 +77,19 @@ export function ModalNick({ aberto, aoFechar }: { aberto: boolean; aoFechar: () 
             autoComplete="off"
             spellCheck={false}
             aria-label="Nick do jogador"
+            aria-invalid={invalido}
+            aria-describedby={invalido ? idErro : undefined}
             className={cn(
               "h-14 w-full rounded-control border bg-surface-inset px-4",
               "font-display text-lg font-semibold text-ink placeholder:text-ink-faint",
               "outline-none transition-colors",
-              nick && !valido ? "border-danger" : "border-line focus:border-accent",
+              invalido ? "border-danger" : "border-line focus:border-accent",
             )}
           />
         </div>
 
-        {nick && !valido && (
-          <p className="mt-2 text-xs text-danger">
+        {invalido && (
+          <p id={idErro} className="mt-2 text-xs text-danger">
             {plataforma === "java"
               ? "O nick do Java tem de 3 a 16 caracteres: letras, números e _ apenas."
               : "O nick do Bedrock tem de 3 a 20 caracteres."}
@@ -106,8 +106,9 @@ export function ModalNick({ aberto, aoFechar }: { aberto: boolean; aoFechar: () 
                 key={p}
                 type="button"
                 onClick={() => setPlataforma(p)}
+                aria-pressed={plataforma === p}
                 className={cn(
-                  "h-11 rounded-control border text-sm font-semibold capitalize transition-colors",
+                  "h-11 rounded-control border text-sm font-semibold transition-colors",
                   plataforma === p
                     ? "border-accent bg-accent/12 text-accent"
                     : "border-line bg-surface-2 text-ink-muted hover:text-ink",

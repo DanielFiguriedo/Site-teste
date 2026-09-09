@@ -11,6 +11,7 @@ export type Centavos = number;
 export const STATUS_PEDIDO = [
   "aguardando_pagamento",
   "pago",
+  "em_revisao",
   "entregue",
   "expirado",
   "cancelado",
@@ -18,6 +19,23 @@ export const STATUS_PEDIDO = [
 ] as const;
 
 export type StatusPedido = (typeof STATUS_PEDIDO)[number];
+
+export type TomStatus = "accent" | "neutro" | "warn" | "danger";
+
+/**
+ * Como cada status é mostrado. Fica aqui, e não em cada tela, porque a vitrine
+ * e o painel precisam falar a mesma língua — e porque a chave do banco
+ * ("aguardando_pagamento") nunca deve chegar ao usuário.
+ */
+export const ROTULO_STATUS: Record<StatusPedido, { texto: string; tom: TomStatus }> = {
+  aguardando_pagamento: { texto: "Aguardando pagamento", tom: "warn" },
+  pago: { texto: "Pago — na fila de entrega", tom: "accent" },
+  em_revisao: { texto: "Em revisão", tom: "warn" },
+  entregue: { texto: "Entregue", tom: "neutro" },
+  expirado: { texto: "Expirado", tom: "neutro" },
+  cancelado: { texto: "Cancelado", tom: "danger" },
+  reembolsado: { texto: "Reembolsado", tom: "neutro" },
+};
 
 export type Plataforma = "java" | "bedrock";
 
@@ -91,6 +109,8 @@ export interface ConfigLoja {
   /** Conteúdo em markdown das páginas legais, editável no painel. */
   termosMd: string | null;
   reembolsoMd: string | null;
+  /** Vazia quando o Turnstile não está configurado. */
+  turnstileSiteKey: string | null;
 }
 
 /** Envelope de erro devolvido por toda a API. */

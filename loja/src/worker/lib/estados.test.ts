@@ -27,12 +27,29 @@ describe("máquina de estados do pedido", () => {
     expect(transicaoValida("entregue", "reembolsado")).toBe(true);
   });
 
-  it("trata os estados finais como finais", () => {
+  it("trata reembolsado e cancelado como finais", () => {
     for (const destino of STATUS_PEDIDO) {
       expect(transicaoValida("reembolsado", destino)).toBe(false);
-      expect(transicaoValida("expirado", destino)).toBe(false);
       expect(transicaoValida("cancelado", destino)).toBe(false);
     }
+  });
+
+  it("deixa um pedido expirado ir para revisão, e só para lá", () => {
+    // Um Pix pode cair depois do QR vencer. Sem esta saída, o pagamento seria
+    // absorvido em silêncio e nem o admin conseguiria corrigir.
+    expect(transicaoValida("expirado", "em_revisao")).toBe(true);
+    for (const destino of STATUS_PEDIDO) {
+      if (destino === "em_revisao") continue;
+      expect(transicaoValida("expirado", destino)).toBe(false);
+    }
+  });
+
+  it("permite resolver a revisão liberando ou encerrando o pedido", () => {
+    expect(transicaoValida("em_revisao", "pago")).toBe(true);
+    expect(transicaoValida("em_revisao", "cancelado")).toBe(true);
+    expect(transicaoValida("em_revisao", "reembolsado")).toBe(true);
+    // Nunca direto para entregue: a revisão existe para alguém conferir antes.
+    expect(transicaoValida("em_revisao", "entregue")).toBe(false);
   });
 
   it("nunca deixa um estado transitar para ele mesmo", () => {

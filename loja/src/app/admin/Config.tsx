@@ -66,7 +66,7 @@ export function ConfigAdmin() {
         {CAMPOS.map((campo) => (
           <label key={campo.chave} className="block">
             <span className="mb-1.5 flex items-baseline justify-between gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 {campo.rotulo}
               </span>
               {campo.dica && (
@@ -102,7 +102,9 @@ export function ConfigAdmin() {
         <Botao onClick={salvar} disabled={salvando}>
           {salvando ? "Salvando..." : "Salvar"}
         </Botao>
-        {salvo && <span className="text-sm text-accent">Salvo.</span>}
+        <span role="status" className="text-sm text-ink-muted">
+          {salvo && "Salvo."}
+        </span>
       </div>
     </div>
   );

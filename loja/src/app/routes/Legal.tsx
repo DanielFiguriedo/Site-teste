@@ -24,7 +24,7 @@ export function PaginaLegal({
 
       <div className="mt-6 rounded-card border border-line bg-surface-1 p-6">
         {texto ? (
-          <Markdown texto={texto} />
+          <Markdown texto={texto} nivel={2} />
         ) : (
           <p className="text-sm leading-relaxed text-ink-muted">
             Este texto ainda não foi preenchido. A equipe da loja pode escrevê-lo no painel,

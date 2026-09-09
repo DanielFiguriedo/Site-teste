@@ -2,15 +2,16 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Link } from "react-router";
 import { cn } from "../lib/cn";
 
-type Variante = "primario" | "secundario" | "fantasma";
+type Variante = "primario" | "secundario" | "fantasma" | "perigo";
 type Tamanho = "sm" | "md" | "lg";
 
 const VARIANTES: Record<Variante, string> = {
   // O acento é escasso de propósito: só o CTA de compra o usa cheio.
   primario:
-    "bg-accent text-accent-ink hover:bg-accent-hover shadow-[0_6px_20px_-8px_var(--color-accent-glow)] hover:shadow-[0_10px_28px_-8px_var(--color-accent-glow)]",
+    "bg-accent text-accent-ink hover:bg-accent-hover shadow-cta hover:shadow-cta-forte",
   secundario: "bg-surface-2 text-ink hover:bg-surface-3 border border-line",
   fantasma: "text-ink-muted hover:text-ink hover:bg-surface-2",
+  perigo: "border border-danger/30 bg-danger/10 text-danger hover:bg-danger/20",
 };
 
 const TAMANHOS: Record<Tamanho, string> = {

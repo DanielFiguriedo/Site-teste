@@ -1,10 +1,27 @@
 import { Hono } from "hono";
+import { and, eq } from "drizzle-orm";
 import { db, schema } from "../db/client";
 import { obterProvider } from "../payments";
 import { marcarComoPago } from "../lib/pedidos";
 import type { AppEnv } from "../env";
 
 export const webhook = new Hono<AppEnv>();
+
+/**
+ * Violação de UNIQUE é evento repetido; qualquer outro erro é falha nossa.
+ *
+ * A mensagem precisa ser procurada na cadeia de causas: o Drizzle embrulha o
+ * erro do D1 num `DrizzleQueryError` cujo próprio `message` é apenas
+ * "Failed query: insert into ..." — o texto do UNIQUE fica no `cause`.
+ */
+export function ehEventoDuplicado(e: unknown): boolean {
+  for (let atual: unknown = e, salto = 0; atual && salto < 5; salto++) {
+    const texto = atual instanceof Error ? atual.message : String(atual);
+    if (/UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test(texto)) return true;
+    atual = atual instanceof Error ? atual.cause : undefined;
+  }
+  return false;
+}
 
 /**
  * Confirmação de pagamento vinda do gateway.
@@ -16,8 +33,9 @@ export const webhook = new Hono<AppEnv>();
  *   4. reconsultar a cobrança na API do gateway (defesa real);
  *   5. só então marcar o pedido como pago.
  *
- * Responde 200 em quase todo caso: um erro devolvido faz o gateway reenfileirar
- * o evento indefinidamente, e alguns provedores pausam a fila inteira da conta.
+ * Um 200 diz ao gateway "recebi, não reenvie". Por isso ele só sai quando o
+ * evento realmente foi registrado: erro de infraestrutura devolve 500 de
+ * propósito, para o gateway reenfileirar.
  */
 webhook.post("/webhook/pix", async (c) => {
   // Passo 1 — uma leitura só. Reler o body lança "Body has already been used",
@@ -47,8 +65,13 @@ webhook.post("/webhook/pix", async (c) => {
         tipo: evento.tipo,
         payload: corpoCru.slice(0, 4000),
       });
-  } catch {
-    return c.json({ ok: true, duplicado: true });
+  } catch (e) {
+    if (ehEventoDuplicado(e)) return c.json({ ok: true, duplicado: true });
+
+    // Um erro transitório do banco tratado como "duplicado" faria o gateway
+    // parar de reenviar um evento que nunca foi processado.
+    console.error("Falha ao registrar o evento de webhook:", e);
+    return c.json({ erro: "Falha temporária. Reenvie." }, 500);
   }
 
   // Passos 4 e 5 rodam depois da resposta: o gateway recebe o 200 imediatamente
@@ -64,11 +87,29 @@ webhook.post("/webhook/pix", async (c) => {
             situacao.valorPagoCentavos,
           );
           console.log(`Webhook ${evento.eventoId} -> ${resultado}`);
+
+          if (resultado === "desconhecido") {
+            // Dinheiro que entrou sem pedido correspondente. Não há o que
+            // creditar, mas some dos logs se não for dito em voz alta.
+            console.error(
+              `Pagamento confirmado para a cobrança ${evento.chargeId}, que não existe no banco.`,
+            );
+          }
         }
       } catch (e) {
-        // O pedido continua como aguardando_pagamento e o cron de reconciliação
-        // tenta de novo em até 5 minutos.
         console.error(`Falha ao processar o webhook ${evento.eventoId}:`, e);
+
+        // Apaga a marca de idempotência para que um reenvio do gateway possa
+        // tentar de novo. Sem isso, a única chance restante seria o cron.
+        await db(c.env)
+          .delete(schema.webhookEventos)
+          .where(
+            and(
+              eq(schema.webhookEventos.provider, provider.nome),
+              eq(schema.webhookEventos.eventoId, evento.eventoId),
+            ),
+          )
+          .catch(() => undefined);
       }
     })(),
   );

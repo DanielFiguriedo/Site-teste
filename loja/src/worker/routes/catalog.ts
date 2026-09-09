@@ -24,6 +24,7 @@ catalogo.get("/config", async (c) => {
       "A entrega é feita manualmente pela nossa equipe após a confirmação do Pix.",
     termosMd: mapa.get("termos_md") || null,
     reembolsoMd: mapa.get("reembolso_md") || null,
+    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY || null,
   };
   return c.json(cfg);
 });

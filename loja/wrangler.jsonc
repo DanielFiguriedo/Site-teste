@@ -39,7 +39,11 @@
   "vars": {
     "AMBIENTE": "producao",
     // "mock" em desenvolvimento (ver .dev.vars), "mercadopago" em produção.
-    "PAGAMENTO_PROVIDER": "mercadopago"
+    "PAGAMENTO_PROVIDER": "mercadopago",
+
+    // Chave PÚBLICA do Turnstile (a secreta vai em `wrangler secret`).
+    // Vazia = widget desligado e checkout sem verificação anti-robô.
+    "TURNSTILE_SITE_KEY": ""
   }
 
   // Segredos (nunca aqui — usar `wrangler secret put`):

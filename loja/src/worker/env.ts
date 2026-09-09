@@ -14,6 +14,8 @@ export interface Env {
   // Variáveis públicas (wrangler.jsonc)
   AMBIENTE: "desenvolvimento" | "producao";
   PAGAMENTO_PROVIDER: "mock" | "mercadopago";
+  /** Chave pública do Turnstile. Vazia desliga o widget. */
+  TURNSTILE_SITE_KEY?: string;
 
   // Segredos
   SESSION_SECRET: string;

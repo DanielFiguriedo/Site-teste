@@ -12,6 +12,9 @@ import { centavosParaReais } from "@shared/dinheiro";
 
 const BASE = "https://api.mercadopago.com";
 
+/** Diferença máxima aceita entre o `ts` da assinatura e o relógio atual. */
+const TOLERANCIA_SEGUNDOS = 300;
+
 /** Vocabulário do Mercado Pago traduzido para o status normalizado da loja. */
 function traduzirStatus(status: string): StatusCobranca {
   switch (status) {
@@ -134,6 +137,11 @@ export class MercadoPagoProvider implements PaymentProvider {
     const ts = partes.get("ts");
     const v1 = partes.get("v1");
     if (!ts || !v1) return false;
+
+    // Uma requisição capturada não pode valer para sempre. A idempotência já
+    // impede crédito duplicado, mas fechar a janela custa três linhas.
+    const idade = Math.abs(Date.now() / 1000 - Number(ts));
+    if (!Number.isFinite(idade) || idade > TOLERANCIA_SEGUNDOS) return false;
 
     let dataId: string | undefined;
     try {

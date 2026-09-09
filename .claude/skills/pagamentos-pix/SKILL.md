@@ -39,7 +39,19 @@ vezes e o dono entrega o item em dobro.
 **6. Responda 200 rápido**; o trabalho posterior vai em `ctx.waitUntil()`.
 
 **7. Conferir o valor.** Se o valor pago divergir do `total_centavos` do pedido,
-não marque como pago — registre e deixe para revisão manual no admin.
+ou se o gateway não informar o valor, não marque como pago: mande para
+`em_revisao` com uma nota. Valor desconhecido não é o mesmo que valor conferido.
+
+**8. Nunca expirar um pedido sem perguntar ao gateway.** Expirar às cegas
+transforma uma instabilidade do gateway em cliente que pagou e ficou sem o item.
+Só é seguro expirar sem consulta um pedido que não chegou a ter cobrança.
+
+**9. Um pagamento que chega atrasado não pode sumir.** Pix confirmado depois de
+o pedido expirar vai para `em_revisao`, porque o dinheiro entrou de verdade.
+
+**10. Distinguir "evento repetido" de "o banco falhou".** Só a violação de
+UNIQUE é duplicata; qualquer outro erro devolve 500 para o gateway reenviar.
+O texto do erro vem no `cause` do `DrizzleQueryError`, não no `message`.
 
 ## Assinatura do Mercado Pago
 
@@ -56,14 +68,23 @@ webhook do painel** — que não é o access token — e comparação em tempo c
 
 ```
 aguardando_pagamento ──(webhook pago)──> pago ──(admin entrega)──> entregue
-        │                                  │
-        │(cron: expirou)                   └──(admin)──> reembolsado
-        └──────────> expirado
-                                           cancelado (admin, a qualquer momento)
+        │       │                          │                          │
+        │       └──(valor divergente ou    └──(admin)──> reembolsado <─┘
+        │           desconhecido)──┐
+        │(cron: gateway diz que    │
+        │  não foi pago)           ▼
+        └──────────> expirado ──> em_revisao ──(admin)──> pago | cancelado
+                        (Pix caiu depois de expirar)
 ```
 
-Transições válidas apenas nessa direção. Um pedido `entregue` nunca volta para
-`pago`. Toda mudança feita pelo admin registra quem fez (`entregue_por`).
+Transições válidas apenas nessa direção, e a tabela `TRANSICOES` em
+`lib/pedidos.ts` é a fonte da verdade. Um pedido `entregue` nunca volta para
+`pago`; de `em_revisao` nunca se vai direto para `entregue` — a revisão existe
+justamente para alguém conferir antes.
+
+**Toda mudança de status usa a guarda de status no `WHERE` e confere quantas
+linhas foram afetadas.** Sem isso, dois administradores clicando "Entreguei" ao
+mesmo tempo recebem sucesso os dois e entregam o item em dobro.
 
 ## Interface do provider
 
@@ -86,5 +107,20 @@ final em produção é uma compra real de R$ 0,01.
 ## Rede de segurança
 
 Cron a cada 5 minutos (`scheduled` em `src/worker/index.ts`): reconsulta pedidos
-`aguardando_pagamento` no gateway e expira os vencidos. Um webhook perdido sem
-essa reconciliação vira um cliente que pagou e ficou sem o item.
+`aguardando_pagamento` no gateway e expira **só** os que ele confirmou como não
+pagos. Um webhook perdido sem essa reconciliação vira um cliente que pagou e
+ficou sem o item.
+
+Três detalhes que parecem miudezas e não são:
+
+- **Ordena por vencimento**, não por criação: quem está mais perto de vencer é
+  quem precisa de decisão agora, e resolvê-lo libera a vaga da rodada.
+- **Poucos pedidos por rodada** (20). O Workers limita subrequisições por
+  invocação; pedir mais faz o lote inteiro falhar no meio, rodada após rodada.
+- **O provedor vem do pedido**, não da configuração atual. Ao trocar `mock` por
+  `mercadopago` no deploy, as cobranças antigas continuam existindo só no
+  provedor antigo.
+
+Há ainda um freio de abuso independente do Turnstile: um mesmo IP só pode ter
+alguns pedidos em aberto por vez. Sem ele, um script encheria a fila de
+pendentes e afogaria justamente esta reconciliação.

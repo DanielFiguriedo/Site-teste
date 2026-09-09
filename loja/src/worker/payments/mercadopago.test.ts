@@ -5,15 +5,20 @@ import { comparaSegura, hmacSha256Hex } from "./provider";
 const SEGREDO = "segredo-do-webhook-do-painel";
 const provider = new MercadoPagoProvider("token-qualquer", SEGREDO);
 
-/** Monta um webhook válido do jeito que o Mercado Pago monta. */
-async function webhookAssinado(chargeId: string, requestId = "req-123") {
+/**
+ * Monta um webhook válido do jeito que o Mercado Pago monta.
+ *
+ * O `ts` é gerado agora de propósito: a verificação recusa assinaturas velhas,
+ * então um timestamp fixo no código passaria a falhar com o tempo.
+ */
+async function webhookAssinado(chargeId: string, requestId = "req-123", segundosAtras = 0) {
   const corpo = JSON.stringify({
     id: 987654,
     type: "payment",
     action: "payment.updated",
     data: { id: chargeId },
   });
-  const ts = "1757440000";
+  const ts = String(Math.floor(Date.now() / 1000) - segundosAtras);
   const manifesto = `id:${chargeId.toLowerCase()};request-id:${requestId};ts:${ts};`;
   const v1 = await hmacSha256Hex(SEGREDO, manifesto);
 
@@ -64,6 +69,17 @@ describe("verificarAssinaturaWebhook", () => {
   it("recusa corpo que não é JSON", async () => {
     const { cabecalhos } = await webhookAssinado("112233");
     expect(await provider.verificarAssinaturaWebhook("<html>erro</html>", cabecalhos)).toBe(false);
+  });
+
+  it("recusa uma assinatura antiga, mesmo sendo legítima", async () => {
+    // Fecha a janela de reenvio de uma requisição capturada.
+    const { corpo, cabecalhos } = await webhookAssinado("112233", "req-123", 3600);
+    expect(await provider.verificarAssinaturaWebhook(corpo, cabecalhos)).toBe(false);
+  });
+
+  it("aceita uma assinatura dentro da tolerância", async () => {
+    const { corpo, cabecalhos } = await webhookAssinado("112233", "req-123", 60);
+    expect(await provider.verificarAssinaturaWebhook(corpo, cabecalhos)).toBe(true);
   });
 });
 

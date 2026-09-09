@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Categoria, Produto } from "@shared/types";
 import { formatarBRL } from "@shared/dinheiro";
 import { api, apiUpload } from "../lib/api";
+import { useModal } from "../lib/modal";
 import { Botao } from "../components/Botao";
 import { Selo } from "../components/Selo";
 import { IconeCategoria } from "../components/Icones";
@@ -25,16 +26,25 @@ export function ProdutosAdmin() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [editando, setEditando] = useState<ProdutoAdmin | "novo" | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string>();
 
   const carregar = useCallback(async () => {
     setCarregando(true);
-    const [listaProdutos, listaCategorias] = await Promise.all([
-      api<ProdutoAdmin[]>("/admin/produtos"),
-      api<Categoria[]>("/admin/categorias"),
-    ]);
-    setProdutos(listaProdutos);
-    setCategorias(listaCategorias);
-    setCarregando(false);
+    setErro(undefined);
+    try {
+      const [listaProdutos, listaCategorias] = await Promise.all([
+        api<ProdutoAdmin[]>("/admin/produtos"),
+        api<Categoria[]>("/admin/categorias"),
+      ]);
+      setProdutos(listaProdutos);
+      setCategorias(listaCategorias);
+    } catch (e) {
+      // Sem este catch, uma falha de rede deixaria a tela no esqueleto para
+      // sempre, sem dizer o que aconteceu.
+      setErro((e as Error).message);
+    } finally {
+      setCarregando(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -54,44 +64,64 @@ export function ProdutosAdmin() {
       </div>
 
       <div className="mt-6 space-y-2">
-        {carregando && <div className="h-20 animate-pulse rounded-card bg-surface-1" />}
-        {produtos.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => setEditando(p)}
-            className={cn(
-              "flex w-full items-center gap-4 rounded-card border border-line bg-surface-1 p-3 text-left",
-              "transition-colors hover:border-line-strong",
-              !p.ativo && "opacity-55",
-            )}
+        {carregando &&
+          Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="h-[4.5rem] animate-pulse rounded-card bg-surface-1" />
+          ))}
+
+        {erro && (
+          <p
+            role="alert"
+            className="rounded-card border border-danger/25 bg-danger/10 p-4 text-sm text-danger"
           >
-            <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-control bg-surface-inset">
-              {p.imagemUrl ? (
-                <img src={p.imagemUrl} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <span className="h-6 w-6 text-accent/60">
-                  <IconeCategoria nome={p.categoriaSlug} />
-                </span>
+            Não foi possível carregar os produtos: {erro}
+          </p>
+        )}
+
+        {!carregando && !erro && produtos.length === 0 && (
+          <p className="rounded-card border border-line bg-surface-1 p-8 text-center text-sm text-ink-muted">
+            Nenhum produto cadastrado ainda. Comece por &ldquo;Novo produto&rdquo;.
+          </p>
+        )}
+
+        {!carregando &&
+          produtos.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setEditando(p)}
+              className={cn(
+                "flex w-full items-center gap-4 rounded-card border border-line bg-surface-1 p-3 text-left",
+                "transition-colors hover:border-line-strong",
+                !p.ativo && "opacity-55",
               )}
-            </span>
-
-            <span className="min-w-0 flex-1">
-              <span className="block font-display text-sm font-bold">{p.nome}</span>
-              <span className="block text-xs text-ink-faint">
-                {p.categoriaNome}
-                {p.estoque !== null && ` · estoque ${p.estoque}`}
+            >
+              <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-control bg-surface-inset">
+                {p.imagemUrl ? (
+                  <img src={p.imagemUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="h-6 w-6 text-ink-faint">
+                    <IconeCategoria nome={p.categoriaSlug} />
+                  </span>
+                )}
               </span>
-            </span>
 
-            <span className="flex shrink-0 items-center gap-3">
-              {!p.ativo && <Selo tom="neutro">inativo</Selo>}
-              {p.destaque && <Selo tom="accent">destaque</Selo>}
-              <span className="tabular font-display text-sm font-bold text-accent">
-                {p.precoLivre ? "livre" : formatarBRL(p.precoCentavos)}
+              <span className="min-w-0 flex-1">
+                <span className="block font-display text-sm font-bold">{p.nome}</span>
+                <span className="block text-xs text-ink-muted">
+                  {p.categoriaNome}
+                  {p.estoque !== null && ` · estoque ${p.estoque}`}
+                </span>
               </span>
-            </span>
-          </button>
-        ))}
+
+              <span className="flex shrink-0 items-center gap-3">
+                {!p.ativo && <Selo tom="neutro">inativo</Selo>}
+                {p.destaque && <Selo tom="accent">destaque</Selo>}
+                <span className="tabular font-display text-sm font-bold text-accent">
+                  {p.precoLivre ? "livre" : formatarBRL(p.precoCentavos)}
+                </span>
+              </span>
+            </button>
+          ))}
       </div>
 
       {editando && (
@@ -137,7 +167,9 @@ function Editor({
     ativo: produto?.ativo ?? true,
   });
   const [salvando, setSalvando] = useState(false);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [erro, setErro] = useState<string>();
+  const caixa = useModal(true, aoFechar);
 
   const atualizar = <C extends keyof typeof form>(campo: C, valor: (typeof form)[C]) =>
     setForm((f) => ({ ...f, [campo]: valor }));
@@ -205,6 +237,7 @@ function Editor({
       role="presentation"
     >
       <div
+        ref={caixa}
         className="mx-auto my-8 w-full max-w-xl rounded-card border border-line-strong bg-surface-1 p-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -239,7 +272,7 @@ function Editor({
             </select>
           </Campo>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Campo rotulo="Preço (R$)">
               <input
                 inputMode="decimal"
@@ -260,7 +293,7 @@ function Editor({
             </Campo>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Campo rotulo="Duração em dias" dica="Vazio = permanente">
               <input
                 inputMode="numeric"
@@ -322,11 +355,7 @@ function Editor({
           </Campo>
 
           <div className="grid gap-2 sm:grid-cols-2">
-            <Marcador
-              rotulo="Ativo na loja"
-              valor={form.ativo}
-              aoMudar={(v) => atualizar("ativo", v)}
-            />
+            <Marcador rotulo="Ativo na loja" valor={form.ativo} aoMudar={(v) => atualizar("ativo", v)} />
             <Marcador
               rotulo="Em destaque"
               valor={form.destaque}
@@ -346,17 +375,32 @@ function Editor({
         </div>
 
         {erro && (
-          <p role="alert" className="mt-4 rounded-control border border-danger/25 bg-danger/10 p-3 text-xs text-danger">
+          <p
+            role="alert"
+            className="mt-4 rounded-control border border-danger/25 bg-danger/10 p-3 text-xs text-danger"
+          >
             {erro}
           </p>
         )}
 
-        <div className="mt-6 flex gap-2">
-          {produto && (
-            <Botao variante="fantasma" onClick={remover} disabled={salvando}>
-              Excluir
-            </Botao>
-          )}
+        <div className="mt-6 flex flex-wrap gap-2">
+          {/* Exclusão exige dois cliques: é irreversível para um produto que
+              nunca foi vendido. */}
+          {produto &&
+            (confirmandoExclusao ? (
+              <Botao variante="perigo" onClick={remover} disabled={salvando}>
+                Confirmar exclusão
+              </Botao>
+            ) : (
+              <Botao
+                variante="fantasma"
+                onClick={() => setConfirmandoExclusao(true)}
+                disabled={salvando}
+              >
+                Excluir
+              </Botao>
+            ))}
+
           <Botao variante="secundario" className="ml-auto" onClick={aoFechar}>
             Cancelar
           </Botao>
@@ -385,7 +429,7 @@ function Campo({
   return (
     <label className="block">
       <span className="mb-1.5 flex items-baseline justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
           {rotulo}
         </span>
         {dica && <span className="text-[0.6875rem] text-ink-faint">{dica}</span>}
@@ -410,7 +454,7 @@ function Marcador({
         type="checkbox"
         checked={valor}
         onChange={(e) => aoMudar(e.target.checked)}
-        className="h-4 w-4 accent-[var(--color-accent)]"
+        className="h-4 w-4 accent-accent"
       />
       <span className="text-sm text-ink-muted">{rotulo}</span>
     </label>

@@ -68,7 +68,7 @@ export function ProdutoPagina() {
       </nav>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div>
+        <div className="order-last lg:order-none">
           <div className="relative aspect-[16/10] overflow-hidden rounded-card border border-line bg-surface-inset">
             {produto.imagemUrl ? (
               <img
@@ -79,7 +79,7 @@ export function ProdutoPagina() {
             ) : (
               <div className="relative grid h-full w-full place-items-center">
                 <div className="absolute inset-0 bg-[radial-gradient(65%_60%_at_50%_25%,var(--color-accent-glow),transparent_70%)]" />
-                <div className="relative h-24 w-24 text-accent/70">
+                <div className="relative h-24 w-24 text-ink-faint">
                   <IconeCategoria nome={produto.categoriaSlug} />
                 </div>
               </div>
@@ -103,17 +103,18 @@ export function ProdutoPagina() {
 
           {produto.descricaoMd && (
             <div className="mt-6 rounded-card border border-line bg-surface-1 p-5">
-              <Markdown texto={produto.descricaoMd} />
+              <Markdown texto={produto.descricaoMd} nivel={2} />
             </div>
           )}
         </div>
 
-        {/* Painel de compra. Gruda no topo no desktop; no mobile fica no fluxo,
-            logo abaixo da descrição. */}
-        <aside className="lg:sticky lg:top-20 lg:self-start">
+        {/* Painel de compra. Gruda no topo no desktop e, no celular, vem antes
+           da descrição: com um texto longo, o CTA ficava a duas ou três
+           rolagens do topo — e é no celular que a maioria compra. */}
+        <aside className="order-first lg:order-none lg:sticky lg:top-20 lg:self-start">
           <div className="rounded-card border border-line bg-surface-1 p-5 shadow-card">
             {produto.precoDeCentavos && (
-              <p className="tabular text-sm text-ink-faint line-through">
+              <p className="tabular text-sm text-ink-muted line-through">
                 {formatarBRL(produto.precoDeCentavos)}
               </p>
             )}
@@ -123,10 +124,10 @@ export function ProdutoPagina() {
 
             {produto.precoLivre ? (
               <label className="mt-5 block">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
                   Valor da contribuição
                 </span>
-                <div className="flex items-center gap-2 rounded-control border border-line bg-surface-inset px-3">
+                <div className="flex items-center gap-2 rounded-control border border-line bg-surface-inset px-3 transition-colors focus-within:border-accent">
                   <span className="text-sm font-semibold text-ink-faint">R$</span>
                   <input
                     inputMode="decimal"
@@ -137,14 +138,14 @@ export function ProdutoPagina() {
                   />
                 </div>
                 {valorLivre && !livreValido && (
-                  <span className="mt-1.5 block text-xs text-danger">
+                  <span className="tabular mt-1.5 block text-xs text-danger">
                     O valor mínimo é {formatarBRL(MINIMO_LIVRE)}.
                   </span>
                 )}
               </label>
             ) : (
               <div className="mt-5">
-                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
                   Quantidade
                 </span>
                 <div className="flex items-center gap-2">
@@ -191,7 +192,7 @@ export function ProdutoPagina() {
             )}
 
             <div className="mt-5 flex gap-2.5 border-t border-line pt-4">
-              <span className="mt-0.5 h-4 w-4 shrink-0 text-ink-faint">
+              <span className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted">
                 <IconeInfo />
               </span>
               <p className="text-xs leading-relaxed text-ink-muted">

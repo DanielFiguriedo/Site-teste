@@ -76,7 +76,7 @@ function Categorias() {
             to={`/loja?categoria=${c.slug}`}
             className="group flex items-center gap-3 rounded-card border border-line bg-surface-1 p-4 shadow-card transition-all duration-300 ease-[var(--ease-out-soft)] hover:-translate-y-0.5 hover:border-line-strong hover:shadow-lift"
           >
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-control bg-surface-2 p-2.5 text-accent transition-colors group-hover:bg-accent/15">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-control bg-surface-2 p-2.5 text-ink-muted transition-colors group-hover:text-ink">
               <IconeCategoria nome={c.icone} />
             </span>
             <span className="min-w-0">
@@ -93,7 +93,11 @@ function Categorias() {
 }
 
 function Destaques() {
-  const { dados, carregando } = useApi<Produto[]>("/produtos?destaque=1");
+  const { dados, carregando, erro } = useApi<Produto[]>("/produtos?destaque=1");
+
+  // Sem destaque cadastrado a seção inteira some, em vez de deixar um título
+  // solto sobre um vazio.
+  if (!carregando && !erro && dados?.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-6xl px-4 pt-20">
@@ -110,11 +114,17 @@ function Destaques() {
         </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {carregando
-          ? Array.from({ length: 4 }, (_, i) => <ProdutoCardEsqueleto key={i} />)
-          : dados?.map((p) => <ProdutoCard key={p.id} produto={p} />)}
-      </div>
+      {erro ? (
+        <p role="alert" className="rounded-card border border-line bg-surface-1 p-6 text-sm text-ink-muted">
+          Não foi possível carregar os produtos agora. Recarregue a página em instantes.
+        </p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {carregando
+            ? Array.from({ length: 4 }, (_, i) => <ProdutoCardEsqueleto key={i} />)
+            : dados?.map((p) => <ProdutoCard key={p.id} produto={p} />)}
+        </div>
+      )}
     </section>
   );
 }
@@ -144,7 +154,7 @@ function ComoFunciona() {
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         {PASSOS.map((p, i) => (
           <div key={p.titulo} className="rounded-card border border-line bg-surface-1 p-5">
-            <span className="font-display text-3xl font-extrabold text-accent/30">
+            <span className="font-display text-3xl font-extrabold text-surface-3">
               {String(i + 1).padStart(2, "0")}
             </span>
             <h3 className="mt-2 font-display text-base font-bold">{p.titulo}</h3>

@@ -4,6 +4,7 @@ import { Login } from "./Login";
 import { PedidosAdmin } from "./Pedidos";
 import { ProdutosAdmin } from "./Produtos";
 import { ConfigAdmin } from "./Config";
+import { Botao } from "../components/Botao";
 import { cn } from "../lib/cn";
 
 const LINKS = [
@@ -40,7 +41,7 @@ export function AdminApp() {
             Painel
           </Link>
 
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-1" aria-label="Seções do painel">
             {LINKS.map((l) => (
               <NavLink
                 key={l.para}
@@ -65,12 +66,9 @@ export function AdminApp() {
             <span className="hidden max-w-[16ch] truncate text-xs text-ink-faint md:block">
               {admin.email}
             </span>
-            <button
-              onClick={sair}
-              className="rounded-control border border-line bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink-muted transition-colors hover:text-ink"
-            >
+            <Botao variante="secundario" tamanho="sm" onClick={sair}>
               Sair
-            </button>
+            </Botao>
           </div>
         </div>
       </header>

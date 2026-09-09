@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, inArray, sql } from "drizzle-orm";
 import { db, schema } from "../../db/client";
 import { exigirAdmin } from "../../lib/auth";
 import { mudarStatus } from "../../lib/pedidos";
@@ -118,15 +118,13 @@ pedidosAdmin.post("/admin/pedidos/:publicId/status", async (c) => {
   const analise = schemaStatus.safeParse(await c.req.json().catch(() => null));
   if (!analise.success) throw requisicaoInvalida("Status inválido.");
 
-  const publicId = c.req.param("publicId");
-  await mudarStatus(c.env, publicId, analise.data.status, c.get("adminEmail") ?? "admin");
-
-  if (analise.data.nota !== undefined) {
-    await db(c.env)
-      .update(schema.pedidos)
-      .set({ notaAdmin: analise.data.nota })
-      .where(eq(schema.pedidos.publicId, publicId));
-  }
+  await mudarStatus(
+    c.env,
+    c.req.param("publicId"),
+    analise.data.status,
+    c.get("adminEmail") ?? "admin",
+    analise.data.nota,
+  );
 
   return c.json({ ok: true });
 });

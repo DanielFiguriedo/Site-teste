@@ -26,7 +26,7 @@ function inline(texto: string, chave: string): ReactNode {
       return (
         <code
           key={k}
-          className="rounded bg-surface-inset px-1.5 py-0.5 font-mono text-[0.85em] text-accent"
+          className="rounded-control bg-surface-inset px-1.5 py-0.5 font-mono text-[0.85em] text-ink"
         >
           {parte.slice(1, -1)}
         </code>
@@ -36,7 +36,8 @@ function inline(texto: string, chave: string): ReactNode {
   });
 }
 
-export function Markdown({ texto }: { texto: string }) {
+export function Markdown({ texto, nivel = 2 }: { texto: string; nivel?: 2 | 3 }) {
+  const Titulo = (nivel === 2 ? "h2" : "h3") as "h2" | "h3";
   const linhas = texto.split("\n");
   const blocos: ReactNode[] = [];
   let listaAberta: string[] = [];
@@ -49,7 +50,7 @@ export function Markdown({ texto }: { texto: string }) {
       <ul key={`ul-${blocos.length}`} className="my-3 space-y-2">
         {itens.map((item, i) => (
           <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-ink-muted">
-            <span aria-hidden="true" className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+            <span aria-hidden="true" className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-faint" />
             <span>{inline(item, `li-${blocos.length}-${i}`)}</span>
           </li>
         ))}
@@ -70,9 +71,12 @@ export function Markdown({ texto }: { texto: string }) {
 
     if (texto.startsWith("### ")) {
       blocos.push(
-        <h3 key={`h-${blocos.length}`} className="mt-5 font-display text-base font-bold text-ink first:mt-0">
+        <Titulo
+          key={`h-${blocos.length}`}
+          className="mt-5 font-display text-base font-bold text-ink first:mt-0"
+        >
           {texto.slice(4)}
-        </h3>,
+        </Titulo>,
       );
       continue;
     }

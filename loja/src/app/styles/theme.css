@@ -52,6 +52,9 @@
      Sombra em fundo escuro precisa ser preta e larga, não cinza e curta. */
   --shadow-card: 0 1px 2px oklch(0 0 0 / 40%), 0 8px 24px -12px oklch(0 0 0 / 70%);
   --shadow-lift: 0 2px 4px oklch(0 0 0 / 40%), 0 18px 40px -16px oklch(0 0 0 / 80%);
+  /* Brilho do botão de compra — o único elemento que ganha halo do acento. */
+  --shadow-cta: 0 6px 20px -8px var(--color-accent-glow);
+  --shadow-cta-forte: 0 10px 28px -8px var(--color-accent-glow);
 
   /* --- Animações ---------------------------------------------------------- */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import type { Plataforma, Produto } from "@shared/types";
 import { formatarBRL } from "@shared/dinheiro";
@@ -8,6 +8,7 @@ import { AvatarNick } from "../components/AvatarNick";
 import { useLoja } from "../lib/loja-context";
 import { Botao } from "../components/Botao";
 import { IconeCategoria, IconeInfo } from "../components/Icones";
+import { Turnstile } from "../components/Turnstile";
 import { cn } from "../lib/cn";
 
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -31,6 +32,10 @@ export function Checkout() {
   const [nickPresenteado, setNickPresenteado] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | undefined>();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const idErroNick = useId();
+  const idErroEmail = useId();
+  const idErroPresente = useId();
 
   // O nick salvo pode chegar depois da primeira renderização (leitura do
   // localStorage no primeiro render, mas o hook revalida em `storage`).
@@ -62,7 +67,10 @@ export function Checkout() {
   const nickOk = nickValido(nick, plataforma);
   const emailOk = REGEX_EMAIL.test(email.trim());
   const presenteOk = !presentear || nickValido(nickPresenteado, plataforma);
-  const podeEnviar = nickOk && emailOk && presenteOk && total > 0 && !enviando;
+  // Quando o Turnstile está configurado, o botão só libera com o token — o
+  // servidor recusaria de qualquer forma, e barrar aqui evita perder o form.
+  const turnstileOk = !config?.turnstileSiteKey || turnstileToken !== null;
+  const podeEnviar = nickOk && emailOk && presenteOk && turnstileOk && total > 0 && !enviando;
 
   const enviar = async () => {
     if (!podeEnviar) return;
@@ -83,6 +91,7 @@ export function Checkout() {
           plataforma,
           email: email.trim(),
           ...(presentear ? { nickPresenteado: nickPresenteado.trim() } : {}),
+          ...(turnstileToken ? { turnstileToken } : {}),
         }),
       });
       navegar(`/pedido/${resposta.publicId}`);
@@ -120,6 +129,8 @@ export function Checkout() {
                     placeholder="SeuNick"
                     autoComplete="off"
                     spellCheck={false}
+                    aria-invalid={Boolean(nick) && !nickOk}
+                    aria-describedby={nick && !nickOk ? idErroNick : undefined}
                     className={cn(
                       "h-14 w-full rounded-control border bg-surface-inset px-4",
                       "font-display text-lg font-semibold outline-none transition-colors",
@@ -128,19 +139,22 @@ export function Checkout() {
                   />
                 </label>
                 {nick && !nickOk && (
-                  <p className="mt-1.5 text-xs text-danger">
+                  <p id={idErroNick} className="mt-1.5 text-xs text-danger">
                     Nick inválido para {plataforma === "java" ? "Java" : "Bedrock"}.
                   </p>
                 )}
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <fieldset className="mt-4">
+              <legend className="sr-only">Plataforma</legend>
+              <div className="grid grid-cols-2 gap-2">
               {(["java", "bedrock"] as const).map((p) => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPlataforma(p)}
+                  aria-pressed={plataforma === p}
                   className={cn(
                     "h-11 rounded-control border text-sm font-semibold transition-colors",
                     plataforma === p
@@ -151,12 +165,13 @@ export function Checkout() {
                   {p === "java" ? "Java" : "Bedrock"}
                 </button>
               ))}
-            </div>
+              </div>
+            </fieldset>
           </Bloco>
 
           <Bloco titulo="Contato">
             <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-faint">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 E-mail
               </span>
               <input
@@ -165,12 +180,19 @@ export function Checkout() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="voce@exemplo.com"
                 autoComplete="email"
+                aria-invalid={Boolean(email) && !emailOk}
+                aria-describedby={email && !emailOk ? idErroEmail : undefined}
                 className={cn(
                   "h-12 w-full rounded-control border bg-surface-inset px-4 text-sm outline-none transition-colors",
                   email && !emailOk ? "border-danger" : "border-line focus:border-accent",
                 )}
               />
             </label>
+            {email && !emailOk && (
+              <p id={idErroEmail} className="mt-1.5 text-xs text-danger">
+                Digite um e-mail válido, como voce@exemplo.com.
+              </p>
+            )}
             <p className="mt-2 text-xs text-ink-faint">
               Usado para o recibo do Pix e para falarmos com você se algo der errado na entrega.
             </p>
@@ -183,7 +205,7 @@ export function Checkout() {
                   type="checkbox"
                   checked={presentear}
                   onChange={(e) => setPresentear(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--color-accent)]"
+                  className="h-4 w-4 accent-accent"
                 />
                 <span className="text-sm text-ink-muted">
                   Esta compra é um presente para outro jogador
@@ -191,8 +213,9 @@ export function Checkout() {
               </label>
 
               {presentear && (
+                <>
                 <label className="mt-4 block">
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     Nick de quem vai receber
                   </span>
                   <input
@@ -201,6 +224,8 @@ export function Checkout() {
                     placeholder="NickDoAmigo"
                     autoComplete="off"
                     spellCheck={false}
+                    aria-invalid={Boolean(nickPresenteado) && !presenteOk}
+                    aria-describedby={nickPresenteado && !presenteOk ? idErroPresente : undefined}
                     className={cn(
                       "h-12 w-full rounded-control border bg-surface-inset px-4 text-sm outline-none transition-colors",
                       nickPresenteado && !presenteOk
@@ -209,6 +234,12 @@ export function Checkout() {
                     )}
                   />
                 </label>
+                {nickPresenteado && !presenteOk && (
+                  <p id={idErroPresente} className="mt-1.5 text-xs text-danger">
+                    Nick inválido. Confira com quem vai receber o presente.
+                  </p>
+                )}
+                </>
               )}
             </Bloco>
           )}
@@ -216,12 +247,12 @@ export function Checkout() {
 
         <aside className="lg:sticky lg:top-20">
           <div className="rounded-card border border-line bg-surface-1 p-5 shadow-card">
-            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-ink-faint">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-ink-muted">
               Resumo
             </h2>
 
             <div className="mt-4 flex gap-3">
-              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-control bg-surface-inset p-2.5 text-accent/70">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-control bg-surface-inset p-2.5 text-ink-faint">
                 <IconeCategoria nome={produto.categoriaSlug} />
               </span>
               <div className="min-w-0">
@@ -239,8 +270,14 @@ export function Checkout() {
               </span>
             </div>
 
+            {config?.turnstileSiteKey && (
+              <div className="mt-4">
+                <Turnstile siteKey={config.turnstileSiteKey} aoResolver={setTurnstileToken} />
+              </div>
+            )}
+
             {erro && (
-              <p className="mt-4 rounded-control border border-danger/25 bg-danger/10 p-3 text-xs text-danger">
+              <p role="alert" className="mt-4 rounded-control border border-danger/25 bg-danger/10 p-3 text-xs text-danger">
                 {erro}
               </p>
             )}
@@ -250,7 +287,7 @@ export function Checkout() {
             </Botao>
 
             <div className="mt-4 flex gap-2.5 border-t border-line pt-4">
-              <span className="mt-0.5 h-4 w-4 shrink-0 text-ink-faint">
+              <span className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted">
                 <IconeInfo />
               </span>
               <p className="text-xs leading-relaxed text-ink-muted">

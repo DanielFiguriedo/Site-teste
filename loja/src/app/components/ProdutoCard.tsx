@@ -44,7 +44,7 @@ export function ProdutoCard({ produto }: { produto: Produto }) {
         ) : (
           <div className="relative flex h-full w-full items-center justify-center">
             <div className="absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_20%,var(--color-accent-glow),transparent_70%)]" />
-            <div className="relative h-16 w-16 text-accent/70 transition-transform duration-500 ease-[var(--ease-out-soft)] group-hover:scale-110">
+            <div className="relative h-16 w-16 text-ink-faint transition-transform duration-500 ease-[var(--ease-out-soft)] group-hover:scale-110">
               <IconeCategoria nome={produto.categoriaSlug} />
             </div>
           </div>
@@ -80,7 +80,7 @@ export function ProdutoCard({ produto }: { produto: Produto }) {
         <div className="mt-auto flex items-end justify-between gap-3 pt-3">
           <div className="flex flex-col">
             {produto.precoDeCentavos && (
-              <span className="tabular text-xs text-ink-faint line-through">
+              <span className="tabular text-xs text-ink-muted line-through">
                 {formatarBRL(produto.precoDeCentavos)}
               </span>
             )}
@@ -109,9 +109,9 @@ export function ProdutoCardEsqueleto() {
     <div className="overflow-hidden rounded-card border border-line bg-surface-1">
       <div className="aspect-[4/3] animate-pulse bg-surface-2" />
       <div className="space-y-2.5 p-4">
-        <div className="h-4 w-3/4 animate-pulse rounded bg-surface-2" />
-        <div className="h-3 w-full animate-pulse rounded bg-surface-2" />
-        <div className="h-6 w-1/3 animate-pulse rounded bg-surface-2" />
+        <div className="h-4 w-3/4 animate-pulse rounded-control bg-surface-2" />
+        <div className="h-3 w-full animate-pulse rounded-control bg-surface-2" />
+        <div className="h-6 w-1/3 animate-pulse rounded-control bg-surface-2" />
       </div>
     </div>
   );

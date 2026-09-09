@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
-import type { Pedido, StatusPedido } from "@shared/types";
+import { Link, useNavigate, useParams } from "react-router";
+import { ROTULO_STATUS, type Pedido, type StatusPedido } from "@shared/types";
 import { formatarBRL } from "@shared/dinheiro";
 import { api } from "../lib/api";
 import { useCopiar } from "../lib/copiar";
@@ -14,52 +14,54 @@ import { cn } from "../lib/cn";
 /** Intervalo de consulta enquanto o pagamento não cai. */
 const INTERVALO_MS = 4000;
 
-const ROTULOS: Record<StatusPedido, { texto: string; tom: "accent" | "neutro" | "warn" | "danger" }> = {
-  aguardando_pagamento: { texto: "Aguardando pagamento", tom: "warn" },
-  pago: { texto: "Pago — na fila de entrega", tom: "accent" },
-  entregue: { texto: "Entregue", tom: "accent" },
-  expirado: { texto: "Expirado", tom: "neutro" },
-  cancelado: { texto: "Cancelado", tom: "danger" },
-  reembolsado: { texto: "Reembolsado", tom: "neutro" },
-};
+/**
+ * Cores do QR Code.
+ *
+ * Não saem dos tokens do tema de propósito: o leitor do banco precisa de alto
+ * contraste real (quase preto sobre branco puro), e as superfícies escuras da
+ * loja não seriam legíveis pela câmera.
+ */
+const QR_ESCURO = "#0b0f14";
+const QR_CLARO = "#ffffff";
 
 export function PedidoPagina() {
   const { publicId } = useParams();
   const { config } = useLoja();
   const [pedido, setPedido] = useState<Pedido>();
   const [erro, setErro] = useState<string>();
-  const [busca, setBusca] = useState("");
 
-  const buscar = useCallback(async (id: string) => {
+  const buscar = useCallback(async (id: string, ehPolling: boolean) => {
     try {
       setPedido(await api<Pedido>(`/pedidos/${id}`));
       setErro(undefined);
     } catch (e) {
-      setErro((e as Error).message);
+      // Uma falha momentânea durante o polling não pode apagar o QR Code da
+      // tela: o pedido continua válido e o comprador pode estar pagando agora.
+      if (!ehPolling) setErro((e as Error).message);
     }
   }, []);
 
   useEffect(() => {
     if (!publicId) return;
-    void buscar(publicId);
+    void buscar(publicId, false);
   }, [publicId, buscar]);
 
   // Enquanto o pagamento não cai, consulta em laço. Para assim que o status
   // muda — deixar o laço rodando à toa queima cota de leitura do D1.
   useEffect(() => {
     if (!publicId || pedido?.status !== "aguardando_pagamento") return;
-    const timer = setInterval(() => void buscar(publicId), INTERVALO_MS);
+    const timer = setInterval(() => void buscar(publicId, true), INTERVALO_MS);
     return () => clearInterval(timer);
   }, [publicId, pedido?.status, buscar]);
 
-  if (!publicId) return <FormularioBusca busca={busca} setBusca={setBusca} />;
+  if (!publicId) return <FormularioBusca />;
 
   if (erro) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center">
         <h1 className="font-display text-2xl font-bold">Pedido não encontrado</h1>
         <p className="mt-2 text-sm text-ink-muted">
-          Confira o link. Ele é enviado logo depois que o Pix é gerado.
+          Confira o link. Ele aparece logo depois que o Pix é gerado.
         </p>
         <Link to="/loja" className="mt-6 inline-block text-sm font-semibold text-accent">
           Voltar para a loja
@@ -70,13 +72,15 @@ export function PedidoPagina() {
 
   if (!pedido) {
     return (
-      <div className="mx-auto max-w-2xl px-4 pt-12">
-        <div className="h-96 animate-pulse rounded-card bg-surface-1" />
+      <div className="mx-auto max-w-2xl px-4 pt-10">
+        <div className="h-10 w-48 animate-pulse rounded-control bg-surface-1" />
+        <div className="mt-6 h-80 animate-pulse rounded-card bg-surface-1" />
+        <div className="mt-5 h-40 animate-pulse rounded-card bg-surface-1" />
       </div>
     );
   }
 
-  const rotulo = ROTULOS[pedido.status];
+  const rotulo = ROTULO_STATUS[pedido.status];
 
   return (
     <div className="mx-auto max-w-2xl px-4 pt-10">
@@ -84,17 +88,22 @@ export function PedidoPagina() {
         <h1 className="font-display text-2xl font-extrabold sm:text-3xl">Seu pedido</h1>
         <Selo tom={rotulo.tom}>{rotulo.texto}</Selo>
       </div>
-      <p className="tabular mt-1.5 text-sm text-ink-faint">
+      <p className="tabular mt-1.5 text-sm text-ink-muted">
         Código {pedido.publicId.slice(0, 8).toUpperCase()}
       </p>
 
-      {pedido.status === "aguardando_pagamento" && <PainelPix pedido={pedido} />}
-      {(pedido.status === "pago" || pedido.status === "entregue") && (
-        <PainelConfirmado pedido={pedido} prazo={config?.prazoEntrega} />
-      )}
-      {(pedido.status === "expirado" ||
-        pedido.status === "cancelado" ||
-        pedido.status === "reembolsado") && <PainelEncerrado status={pedido.status} />}
+      {/* A tela troca de painel sozinha quando o Pix é confirmado. Sem esta
+          região viva, quem usa leitor de tela não fica sabendo. */}
+      <div role="status" aria-live="polite">
+        {pedido.status === "aguardando_pagamento" && <PainelPix pedido={pedido} />}
+        {(pedido.status === "pago" || pedido.status === "entregue") && (
+          <PainelConfirmado pedido={pedido} prazo={config?.prazoEntrega} />
+        )}
+        {(pedido.status === "expirado" ||
+          pedido.status === "cancelado" ||
+          pedido.status === "reembolsado" ||
+          pedido.status === "em_revisao") && <PainelEncerrado status={pedido.status} />}
+      </div>
 
       <Resumo pedido={pedido} />
     </div>
@@ -125,7 +134,7 @@ function PainelPix({ pedido }: { pedido: Pedido }) {
         QRCode.toDataURL(codigo, {
           width: 512,
           margin: 1,
-          color: { dark: "#0b0f14", light: "#ffffff" },
+          color: { dark: QR_ESCURO, light: QR_CLARO },
         }),
       )
       .then((url) => {
@@ -155,7 +164,7 @@ function PainelPix({ pedido }: { pedido: Pedido }) {
   return (
     <div className="mt-6 rounded-card border border-line bg-surface-1 p-6 shadow-card">
       <div className="flex flex-col items-center text-center">
-        <div className="rounded-card bg-white p-3">
+        <div className="rounded-card p-3" style={{ backgroundColor: QR_CLARO }}>
           {qr ? (
             <img src={qr} alt="QR Code do Pix" className="h-48 w-48" />
           ) : (
@@ -170,10 +179,15 @@ function PainelPix({ pedido }: { pedido: Pedido }) {
         </p>
 
         {pedido.expiraEm && (
-          <p className="mt-1 text-sm text-ink-muted">
+          // O cronômetro muda a cada segundo; anunciá-lo faria o leitor de tela
+          // falar sem parar por cima do resto da página.
+          <p className="mt-1 text-sm text-ink-muted" aria-live="off">
             {restante > 0 ? (
               <>
-                Expira em <span className="tabular font-semibold text-ink">{minutos}:{segundos}</span>
+                Expira em{" "}
+                <span className="tabular font-semibold text-ink">
+                  {minutos}:{segundos}
+                </span>
               </>
             ) : (
               "Este código expirou. Faça um novo pedido."
@@ -184,7 +198,7 @@ function PainelPix({ pedido }: { pedido: Pedido }) {
 
       {pedido.pixCopiaCola && (
         <div className="mt-6">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             Pix copia e cola
           </p>
           <div className="flex gap-2">
@@ -195,6 +209,7 @@ function PainelPix({ pedido }: { pedido: Pedido }) {
               onClick={() => copiar(pedido.pixCopiaCola!)}
               className="shrink-0"
               variante={copiado ? "secundario" : "primario"}
+              aria-label="Copiar o código Pix"
             >
               <span className="h-4 w-4">{copiado ? <IconeCheque /> : <IconeCopiar />}</span>
               {copiado ? "Copiado" : "Copiar"}
@@ -203,7 +218,7 @@ function PainelPix({ pedido }: { pedido: Pedido }) {
         </div>
       )}
 
-      <p className="mt-5 text-center text-xs text-ink-faint">
+      <p className="mt-5 text-center text-xs text-ink-muted">
         Assim que o banco confirmar, esta página muda sozinha. Pode deixá-la aberta.
       </p>
 
@@ -263,7 +278,7 @@ function PainelConfirmado({ pedido, prazo }: { pedido: Pedido; prazo: string | u
       </p>
 
       {!entregue && (
-        <p className="mt-4 text-xs text-ink-faint">
+        <p className="mt-4 text-xs text-ink-muted">
           Guarde este link para acompanhar quando a entrega for feita.
         </p>
       )}
@@ -276,11 +291,14 @@ function PainelEncerrado({ status }: { status: StatusPedido }) {
     expirado: "O prazo para pagar este Pix acabou. Faça um novo pedido — leva menos de um minuto.",
     cancelado: "Este pedido foi cancelado. Se você pagou mesmo assim, fale com a equipe.",
     reembolsado: "O valor deste pedido foi devolvido.",
+    em_revisao:
+      "Recebemos um pagamento que não bateu com este pedido. Nossa equipe está conferindo e " +
+      "entra em contato pelo e-mail informado. Não pague de novo.",
   };
 
   return (
     <div className="mt-6 rounded-card border border-line bg-surface-1 p-6 text-center">
-      <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-surface-2 p-3 text-ink-faint">
+      <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-surface-2 p-3 text-ink-muted">
         <IconeInfo />
       </span>
       <p className="mx-auto mt-4 max-w-sm text-sm leading-relaxed text-ink-muted">
@@ -296,7 +314,7 @@ function PainelEncerrado({ status }: { status: StatusPedido }) {
 function Resumo({ pedido }: { pedido: Pedido }) {
   return (
     <section className="mt-5 rounded-card border border-line bg-surface-1 p-5">
-      <h2 className="mb-4 font-display text-sm font-bold uppercase tracking-wide text-ink-faint">
+      <h2 className="mb-4 font-display text-sm font-bold uppercase tracking-wide text-ink-muted">
         Itens
       </h2>
 
@@ -331,9 +349,7 @@ function Resumo({ pedido }: { pedido: Pedido }) {
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-ink-muted">Total</dt>
-          <dd className="tabular font-semibold text-accent">
-            {formatarBRL(pedido.totalCentavos)}
-          </dd>
+          <dd className="tabular font-semibold text-accent">{formatarBRL(pedido.totalCentavos)}</dd>
         </div>
       </dl>
     </section>
@@ -341,41 +357,41 @@ function Resumo({ pedido }: { pedido: Pedido }) {
 }
 
 /** Tela de /pedido sem código: o comprador cola o link ou o código que recebeu. */
-function FormularioBusca({
-  busca,
-  setBusca,
-}: {
-  busca: string;
-  setBusca: (v: string) => void;
-}) {
+function FormularioBusca() {
+  const navegar = useNavigate();
+  const [busca, setBusca] = useState("");
   const codigo = busca.trim().split("/").pop() ?? "";
 
   return (
-    <div className="mx-auto max-w-md px-4 py-20 text-center">
+    <form
+      className="mx-auto max-w-md px-4 py-20 text-center"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (codigo) navegar(`/pedido/${codigo}`);
+      }}
+    >
       <h1 className="font-display text-2xl font-extrabold">Acompanhar pedido</h1>
       <p className="mt-2 text-sm text-ink-muted">
         Cole aqui o link ou o código do pedido que você recebeu ao gerar o Pix.
       </p>
 
-      <input
-        value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-        placeholder="Código do pedido"
-        className={cn(
-          "mt-6 h-12 w-full rounded-control border border-line bg-surface-inset px-4",
-          "text-center text-sm outline-none transition-colors focus:border-accent",
-        )}
-      />
+      <label className="mt-6 block">
+        <span className="sr-only">Código do pedido</span>
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Código do pedido"
+          autoComplete="off"
+          className={cn(
+            "h-12 w-full rounded-control border border-line bg-surface-inset px-4",
+            "text-center text-sm outline-none transition-colors focus:border-accent",
+          )}
+        />
+      </label>
 
-      <Link
-        to={codigo ? `/pedido/${codigo}` : "#"}
-        className={cn(
-          "mt-3 block h-11 rounded-control bg-accent px-5 font-semibold leading-[2.75rem] text-accent-ink",
-          !codigo && "pointer-events-none opacity-45",
-        )}
-      >
+      <Botao type="submit" tamanho="lg" className="mt-3 w-full" disabled={!codigo}>
         Buscar
-      </Link>
-    </div>
+      </Botao>
+    </form>
   );
 }

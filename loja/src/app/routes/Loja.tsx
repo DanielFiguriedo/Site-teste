@@ -1,9 +1,9 @@
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import type { Produto } from "@shared/types";
 import { useApi } from "../lib/api";
 import { useLoja } from "../lib/loja-context";
 import { ProdutoCard, ProdutoCardEsqueleto } from "../components/ProdutoCard";
-import { cn } from "../lib/cn";
+import { ChipLink } from "../components/Chip";
 
 export function Loja() {
   const [params] = useSearchParams();
@@ -26,17 +26,13 @@ export function Loja() {
       </p>
 
       <nav className="mt-7 flex flex-wrap gap-2" aria-label="Categorias">
-        <FiltroLink para="/loja" ativo={!categoriaAtiva}>
+        <ChipLink para="/loja" ativo={!categoriaAtiva}>
           Tudo
-        </FiltroLink>
+        </ChipLink>
         {categorias.map((c) => (
-          <FiltroLink
-            key={c.id}
-            para={`/loja?categoria=${c.slug}`}
-            ativo={categoriaAtiva === c.slug}
-          >
+          <ChipLink key={c.id} para={`/loja?categoria=${c.slug}`} ativo={categoriaAtiva === c.slug}>
             {c.nome}
-          </FiltroLink>
+          </ChipLink>
         ))}
       </nav>
 
@@ -52,29 +48,5 @@ export function Loja() {
         </p>
       )}
     </div>
-  );
-}
-
-function FiltroLink({
-  para,
-  ativo,
-  children,
-}: {
-  para: string;
-  ativo: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={para}
-      className={cn(
-        "rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors",
-        ativo
-          ? "border-accent bg-accent/12 text-accent"
-          : "border-line bg-surface-1 text-ink-muted hover:border-line-strong hover:text-ink",
-      )}
-    >
-      {children}
-    </Link>
   );
 }
