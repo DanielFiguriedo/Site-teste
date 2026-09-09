@@ -88,6 +88,9 @@ export interface ConfigLoja {
   /** Texto curto: "em até 24 horas", usado nas telas de pagamento e sucesso. */
   prazoEntrega: string;
   avisoEntrega: string;
+  /** Conteúdo em markdown das páginas legais, editável no painel. */
+  termosMd: string | null;
+  reembolsoMd: string | null;
 }
 
 /** Envelope de erro devolvido por toda a API. */

@@ -7,17 +7,29 @@ import { checkout } from "./routes/checkout";
 import { pedidosPublicos } from "./routes/orders";
 import { webhook } from "./routes/webhook";
 import { dev } from "./routes/dev";
+import { sessaoAdmin } from "./routes/admin/sessao";
+import { catalogoAdmin } from "./routes/admin/catalogo";
+import { pedidosAdmin } from "./routes/admin/pedidos";
+import { uploadAdmin } from "./routes/admin/upload";
 import type { ApiErro } from "@shared/types";
 
 const app = new Hono<AppEnv>();
 
 app.onError((e, c) => respostaErro(c, e));
 
+// Público
 app.route("/api", catalogo);
 app.route("/api", checkout);
 app.route("/api", pedidosPublicos);
 app.route("/api", webhook);
 app.route("/api", dev);
+
+// Painel administrativo. Cada router aplica `exigirAdmin` nas próprias rotas,
+// exceto o de sessão, onde o login precisa ser acessível sem sessão.
+app.route("/api", sessaoAdmin);
+app.route("/api", pedidosAdmin);
+app.route("/api", catalogoAdmin);
+app.route("/api", uploadAdmin);
 
 app.get("/api/saude", (c) =>
   c.json({ ok: true, ambiente: c.env.AMBIENTE, agora: new Date().toISOString() }),

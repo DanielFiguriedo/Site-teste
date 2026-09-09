@@ -22,6 +22,8 @@ catalogo.get("/config", async (c) => {
     avisoEntrega:
       mapa.get("aviso_entrega") ||
       "A entrega é feita manualmente pela nossa equipe após a confirmação do Pix.",
+    termosMd: mapa.get("termos_md") || null,
+    reembolsoMd: mapa.get("reembolso_md") || null,
   };
   return c.json(cfg);
 });

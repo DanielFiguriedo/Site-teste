@@ -17,6 +17,20 @@ export async function api<T>(caminho: string, init?: RequestInit): Promise<T> {
   return resposta.json() as Promise<T>;
 }
 
+/**
+ * Envio de arquivo. Separado de `api` porque o corpo é `FormData`: definir
+ * `content-type` na mão aqui quebraria o boundary que o navegador gera.
+ */
+export async function apiUpload<T>(caminho: string, dados: FormData): Promise<T> {
+  const resposta = await fetch(`/api${caminho}`, { method: "POST", body: dados });
+
+  if (!resposta.ok) {
+    const corpo = (await resposta.json().catch(() => null)) as ApiErro | null;
+    throw new Error(corpo?.erro ?? `Falha no envio do arquivo (${resposta.status}).`);
+  }
+  return resposta.json() as Promise<T>;
+}
+
 export interface EstadoRequisicao<T> {
   dados: T | undefined;
   carregando: boolean;

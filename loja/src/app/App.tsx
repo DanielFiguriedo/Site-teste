@@ -7,28 +7,48 @@ import { Loja } from "./routes/Loja";
 import { ProdutoPagina } from "./routes/Produto";
 import { Checkout } from "./routes/Checkout";
 import { PedidoPagina } from "./routes/Pedido";
+import { PaginaLegal } from "./routes/Legal";
+import { AdminApp } from "./admin/AdminApp";
 
 export function App() {
   return (
     <BrowserRouter>
-      <ProvedorLoja>
-        <div className="flex min-h-dvh flex-col">
-          <Header />
-          <main className="flex-1">
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/loja" element={<Loja />} />
-              <Route path="/produto/:slug" element={<ProdutoPagina />} />
-              <Route path="/checkout" element={<Checkout />} />
-              <Route path="/pedido" element={<PedidoPagina />} />
-              <Route path="/pedido/:publicId" element={<PedidoPagina />} />
-              <Route path="*" element={<NaoEncontrado />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
-      </ProvedorLoja>
+      <Routes>
+        {/* O painel tem cabeçalho e navegação próprios — nada da vitrine. */}
+        <Route path="/admin/*" element={<AdminApp />} />
+        <Route path="/*" element={<Vitrine />} />
+      </Routes>
     </BrowserRouter>
+  );
+}
+
+function Vitrine() {
+  return (
+    <ProvedorLoja>
+      <div className="flex min-h-dvh flex-col">
+        <Header />
+        <main className="flex-1">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/loja" element={<Loja />} />
+            <Route path="/produto/:slug" element={<ProdutoPagina />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/pedido" element={<PedidoPagina />} />
+            <Route path="/pedido/:publicId" element={<PedidoPagina />} />
+            <Route
+              path="/termos"
+              element={<PaginaLegal titulo="Termos de uso" chave="termos_md" />}
+            />
+            <Route
+              path="/reembolso"
+              element={<PaginaLegal titulo="Política de reembolso" chave="reembolso_md" />}
+            />
+            <Route path="*" element={<NaoEncontrado />} />
+          </Routes>
+        </main>
+        <Footer />
+      </div>
+    </ProvedorLoja>
   );
 }
 
