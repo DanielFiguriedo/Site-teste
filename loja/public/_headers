@@ -1,0 +1,25 @@
+# Headers for the static front-end.
+#
+# The Worker only sees /api/* (`run_worker_first` in wrangler.jsonc), so the
+# page's own policy cannot come from middleware — Cloudflare's static assets
+# read it from this file. The API sets its own headers in lib/security.ts.
+#
+# The allowed origins are exactly what the built bundle reaches for: Google
+# Fonts for the two typefaces, mc-heads.net for the player head, and Turnstile,
+# which needs three separate permissions — its script, its iframe, and the
+# network calls the widget makes on its own. Tightening any of those without
+# checking silently disables the anti-bot check on checkout.
+
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://mc-heads.net; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
+
+# The panel has nothing to gain from being indexed, and a search result for it
+# is a free list of stores running this software.
+/admin/*
+  X-Robots-Tag: noindex, nofollow
