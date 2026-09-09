@@ -1,0 +1,48 @@
+{
+  "name": "loja-minecraft",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false || tsc -b",
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply loja-minecraft --local",
+    "db:migrate:remote": "wrangler d1 migrations apply loja-minecraft --remote",
+    "db:seed:local": "wrangler d1 execute loja-minecraft --local --file=./seed.sql",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@types/node": "^26.5.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.7",
+    "motion": "^13.2.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router": "^8.3.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.6",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "drizzle-kit": "^0.31.10",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "wrangler": "^4.130.0"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260908.1": true
+  }
+}

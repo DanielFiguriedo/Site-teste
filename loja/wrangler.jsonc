@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "loja-minecraft",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    // O bundle do React é servido como asset estático; qualquer rota que não
+    // seja arquivo cai no index.html (SPA) — exceto /api/*, que o Worker trata.
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  "observability": { "enabled": true },
+
+  // Reconcilia pedidos aguardando pagamento e expira os vencidos, caso o
+  // webhook do gateway falhe ou se perca.
+  "triggers": { "crons": ["*/5 * * * *"] },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "loja-minecraft",
+      "database_id": "PREENCHER_APOS_CRIAR_O_BANCO",
+      "migrations_dir": "./migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    { "binding": "BUCKET", "bucket_name": "loja-minecraft-imagens" }
+  ],
+
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "PREENCHER_APOS_CRIAR_O_NAMESPACE" }
+  ],
+
+  "vars": {
+    "AMBIENTE": "producao",
+    // "mock" em desenvolvimento (ver .dev.vars), "mercadopago" em produção.
+    "PAGAMENTO_PROVIDER": "mercadopago"
+  }
+
+  // Segredos (nunca aqui — usar `wrangler secret put`):
+  //   MERCADOPAGO_ACCESS_TOKEN
+  //   MERCADOPAGO_WEBHOOK_SECRET
+  //   SESSION_SECRET
+  //   TURNSTILE_SECRET_KEY
+}
